@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Apontamento de Campo - NPO</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#003eff">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Archivo:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-row">
+      <div>
+        <div class="topbar-title">Apontamento de Campo</div>
+        <div class="topbar-sub" id="topbarSub">Projeto NPO</div>
+      </div>
+      <div class="status-pill offline" id="connStatus">Offline</div>
+    </div>
+    <button class="pending-badge" id="pendingBadge" style="display:none" onclick="Screens.go('sync')">
+      <span id="pendingCount"><b>0</b> apontamento(s) aguardando sincronizar</span>
+    </button>
+  </div>
+
+  <div class="crumbs" id="crumbs" style="display:none"></div>
+
+  <!-- ===================== TELA: OPERADOR ===================== -->
+  <div class="screen active" id="screen-operador">
+    <div class="screen-title">Quem está apontando?</div>
+    <div class="screen-desc">Selecione seu nome na lista. Se não aparecer, cadastre-se abaixo.</div>
+    <div class="btn-block-list" id="listaOperadores"></div>
+    <div style="margin-top:16px">
+      <button class="link-btn" onclick="Screens.go('cadastrarOperador')">+ Cadastrar meu nome</button>
+    </div>
+    <div style="margin-top:28px; text-align:center">
+      <button class="link-btn" onclick="Screens.go('config')">Configurações / equipe</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: CADASTRAR OPERADOR ===================== -->
+  <div class="screen" id="screen-cadastrarOperador">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Cadastrar novo nome</div>
+    <div class="field-group">
+      <label class="field-label field-required">Nome completo</label>
+      <input type="text" id="novoOperadorNome" placeholder="Ex: João da Silva" style="width:100%; padding:14px; border-radius:10px; border:1.5px solid var(--steel-light); font-size:15px;">
+    </div>
+    <div class="action-bar">
+      <button class="btn btn-primary" onclick="App.salvarOperador()">Salvar e continuar</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: ATIVIDADE ===================== -->
+  <div class="screen" id="screen-atividade">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Qual atividade você vai reportar?</div>
+    <div class="screen-desc">Selecione o tipo de montagem. Isso filtra as TAGs certas para você em seguida.</div>
+    <div class="btn-block-list" id="listaAtividades"></div>
+  </div>
+
+  <!-- ===================== TELA: BLOCO ===================== -->
+  <div class="screen" id="screen-bloco">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Selecione o Bloco</div>
+    <div class="screen-desc">Bloco onde o item foi instalado.</div>
+    <div class="btn-block-list" id="listaBlocos"></div>
+  </div>
+
+  <!-- ===================== TELA: SUBBLOCO ===================== -->
+  <div class="screen" id="screen-subbloco">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Selecione o Sub-bloco</div>
+    <div class="screen-desc" id="subblocoDesc"></div>
+    <div class="btn-block-list" id="listaSubBlocos"></div>
+  </div>
+
+  <!-- ===================== TELA: BUSCA TAG ===================== -->
+  <div class="screen" id="screen-busca">
+    <button class="link-btn" style="margin-bottom:10px; align-self:flex-start" onclick="Screens.voltar()">← Voltar</button>
+    <div class="search-wrap">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+        <span class="candidate-count" style="margin:0" id="candidateCount"></span>
+        <button class="link-btn" id="btnToggleMulti" onclick="Busca.alternarModoMultiplo()">Selecionar várias</button>
+      </div>
+      <input type="text" class="search-input" id="inputBusca" placeholder="Digite o que conseguir ler da TAG..." autocomplete="off">
+      <div class="search-hint">Digite qualquer trecho legível, em qualquer posição. Etiqueta corroída? Digite só o que der — a lista já mostra os itens mais prováveis desse local.</div>
+    </div>
+    <div id="listaCandidatos"></div>
+    <div class="action-bar" id="barraSelecaoMultipla" style="display:none">
+      <button class="btn btn-primary" id="btnContinuarLote" onclick="Busca.irParaLote()">Continuar com 0 selecionadas</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: APONTAMENTO EM LOTE ===================== -->
+  <div class="screen" id="screen-apontamentoLote">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Registrar várias TAGs</div>
+    <div class="screen-desc">Os campos abaixo serão aplicados a todas as TAGs selecionadas.</div>
+    <div class="detail-card" id="resumoLoteCard"></div>
+
+    <div class="field-group">
+      <label class="field-label field-required">Status</label>
+      <div class="choice-grid">
+        <div class="choice-btn status-instalado" data-status-lote="Instalado" onclick="App.setStatusLote('Instalado')">Instalado</div>
+        <div class="choice-btn status-andamento" data-status-lote="Em andamento" onclick="App.setStatusLote('Em andamento')">Em andamento</div>
+        <div class="choice-btn status-problema" data-status-lote="Problema" onclick="App.setStatusLote('Problema')">Problema</div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Observação (aplicada a todas)</label>
+      <textarea id="inputObservacaoLote" placeholder="Detalhes relevantes (opcional)"></textarea>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Foto geral (opcional)</label>
+      <div id="photoAreaLote">
+        <div class="photo-box" onclick="document.getElementById('inputFotoLote').click()">
+          📷 Toque para tirar ou anexar uma foto do conjunto
+        </div>
+      </div>
+      <input type="file" id="inputFotoLote" accept="image/*" capture="environment" style="display:none" onchange="App.handleFotoLote(event)">
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" id="btnSalvarLote" onclick="App.salvarApontamentoLote()" disabled>Salvar apontamentos</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: CONFIRMAR TAG ===================== -->
+  <div class="screen" id="screen-confirmarTag">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">É esse item?</div>
+    <div class="detail-card" id="detalheTagCard"></div>
+    <div class="btn-block-list">
+      <button class="btn btn-primary" onclick="Screens.go('apontamento')">Sim, é este item</button>
+      <button class="btn btn-secondary" onclick="Screens.go('busca')">Não, voltar à busca</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: APONTAMENTO ===================== -->
+  <div class="screen" id="screen-apontamento">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Registrar apontamento</div>
+    <div class="detail-card" id="detalheTagResumo"></div>
+
+    <div class="field-group">
+      <label class="field-label field-required">Status</label>
+      <div class="choice-grid">
+        <div class="choice-btn status-instalado" data-status="Instalado" onclick="App.setStatus('Instalado')">Instalado</div>
+        <div class="choice-btn status-andamento" data-status="Em andamento" onclick="App.setStatus('Em andamento')">Em andamento</div>
+        <div class="choice-btn status-problema" data-status="Problema" onclick="App.setStatus('Problema')">Problema</div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Nível de identificação da TAG</label>
+      <select id="selectConfianca">
+        <option value="Completa e legível">TAG completa e legível</option>
+        <option value="Parcial - identificada por padrão">TAG parcial — identificada por padrão digitado</option>
+        <option value="Ilegível - identificada por características físicas">TAG ilegível — identificada por características físicas</option>
+        <option value="Ambígua - múltiplas TAGs possíveis">Ambígua — múltiplas TAGs possíveis</option>
+      </select>
+      <div class="confidence-note">Isso ajuda quem for conferir depois a saber onde checar com mais atenção.</div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Observação</label>
+      <textarea id="inputObservacao" placeholder="Detalhes relevantes (opcional)"></textarea>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label field-required">Foto da etiqueta / peça</label>
+      <div id="photoArea">
+        <div class="photo-box" onclick="document.getElementById('inputFoto').click()">
+          📷 Toque para tirar ou anexar foto
+        </div>
+      </div>
+      <input type="file" id="inputFoto" accept="image/*" capture="environment" style="display:none" onchange="App.handleFoto(event)">
+    </div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" id="btnSalvarApontamento" onclick="App.salvarApontamento()" disabled>Salvar apontamento</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: CONFIRMACAO ===================== -->
+  <div class="screen" id="screen-confirmacao">
+    <div class="confirm-icon">✓</div>
+    <div class="screen-title" style="text-align:center">Apontamento salvo</div>
+    <div class="screen-desc" style="text-align:center" id="confirmacaoDesc">
+      Salvo neste aparelho. Será enviado automaticamente quando houver internet.
+    </div>
+    <div class="btn-block-list">
+      <button class="btn btn-secondary" onclick="App.compartilharWhatsApp()">📤 Compartilhar resumo no WhatsApp</button>
+      <button class="btn btn-primary" onclick="App.novoApontamentoMesmoLocal()">Novo apontamento (mesmo Bloco/Sub-bloco)</button>
+      <button class="btn btn-secondary" onclick="Screens.go('atividade')">Trocar de Atividade/Bloco</button>
+      <button class="btn btn-ghost" onclick="Screens.go('sync')">Ver fila de sincronização</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: SYNC ===================== -->
+  <div class="screen" id="screen-sync">
+    <div class="screen-title">Fila de sincronização</div>
+    <div class="screen-desc">Apontamentos salvos neste aparelho. Enviados automaticamente ao detectar internet.</div>
+    <div id="listaSync"></div>
+    <div class="action-bar">
+      <button class="btn btn-secondary" style="margin-bottom:8px" onclick="App.compartilharFilaWhatsApp()">📤 Compartilhar fila no WhatsApp</button>
+      <button class="btn btn-primary" id="btnSyncAgora" onclick="Sync.sincronizarAgora()">Sincronizar agora</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: CONFIG ===================== -->
+  <div class="screen" id="screen-config">
+    <div class="screen-title">Configurações</div>
+
+    <div class="field-group">
+      <label class="field-label">Equipe (nomes cadastrados)</label>
+      <div id="listaEquipe"></div>
+      <div class="field-inline" style="margin-top:10px">
+        <input type="text" id="novoNomeConfig" placeholder="Adicionar nome">
+        <button class="btn btn-secondary" style="width:auto; padding:0 16px; min-height:44px" onclick="App.adicionarNomeConfig()">+</button>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">URL de sincronização (Google Apps Script)</label>
+      <input type="text" id="inputSyncUrl" placeholder="https://script.google.com/macros/s/..." style="width:100%; padding:12px; border-radius:10px; border:1.5px solid var(--steel-light); font-size:13px;">
+      <div class="confidence-note">Cole aqui a URL do Web App gerado no Google Apps Script (veja o guia de configuração).</div>
+      <button class="btn btn-secondary" style="margin-top:10px" onclick="App.salvarSyncUrl()">Salvar URL</button>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Base de referência (TAGS)</label>
+      <div class="confidence-note" id="infoBaseTags"></div>
+    </div>
+
+    <div style="margin-top:10px">
+      <button class="link-btn" onclick="Screens.go('operador')">← Voltar</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
