@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apontamento-npo-v7';
+const CACHE_NAME = 'apontamento-npo-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './tags_data.json',
   './manifest.json',
   './assets/seatrium-logo.png',
+  './assets/ea-logo.png',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];

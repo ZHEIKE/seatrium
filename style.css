@@ -78,6 +78,13 @@ body {
   display: block;
 }
 
+.brand-mark-ea {
+  height: 26px;
+  width: auto;
+  display: block;
+  margin-top: 1px;
+}
+
 .topbar-sector {
   font-size: 11px;
   font-weight: 600;
@@ -335,6 +342,28 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+#screen-operador {
+  position: relative;
+  overflow: hidden;
+  min-height: calc(100vh - 140px);
+}
+
+.decor-wave {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 200px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#screen-operador > *:not(.decor-wave) {
+  position: relative;
+  z-index: 1;
+}
+
 .field-required::after { content: " *"; color: var(--danger); }
 
 .choice-grid {
