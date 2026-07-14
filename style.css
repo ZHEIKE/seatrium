@@ -79,7 +79,7 @@ body {
 }
 
 .brand-mark-ea {
-  height: 22px;
+  height: 20px;
   width: auto;
   display: block;
 }
@@ -88,14 +88,17 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  line-height: 1;
 }
 
 .brand-ea-text {
   font-family: var(--display);
   font-weight: 700;
   font-size: 15px;
+  line-height: 1;
   color: var(--ink);
   letter-spacing: -0.2px;
+  display: block;
 }
 
 .topbar-sector {
