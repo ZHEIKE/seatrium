@@ -86,7 +86,7 @@ body {
 
 .brand-ea-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
   line-height: 1;
 }
