@@ -173,7 +173,9 @@ const App = {
   },
   selecionarOperador(nome) {
     this.state.operador = nome;
-    document.getElementById('topbarSub').textContent = 'Operador: ' + nome;
+    const elOp = document.getElementById('topbarOperador');
+    elOp.textContent = 'Operador: ' + nome;
+    elOp.style.display = 'block';
     this.renderAtividades();
     Screens.go('atividade');
   },
@@ -311,7 +313,7 @@ const App = {
   },
 
   validarFormApontamento() {
-    const ok = this.state.status && this.state.fotoBase64;
+    const ok = !!this.state.status;
     document.getElementById('btnSalvarApontamento').disabled = !ok;
   },
 
@@ -348,6 +350,17 @@ const App = {
   },
 
   novoApontamentoMesmoLocal() {
+    Busca.prepararLocal();
+    Screens.go('busca');
+  },
+
+  adicionarNovoApontamento() {
+    // Retoma de onde deu pra continuar: se já tem atividade+bloco+sub-bloco
+    // selecionados, vai direto pra busca; senão, volta pro passo que falta.
+    if (!this.state.operador) { Screens.go('operador'); return; }
+    if (!this.state.atividade) { this.renderAtividades(); Screens.go('atividade'); return; }
+    if (!this.state.bloco) { this.renderBlocos(); Screens.go('bloco'); return; }
+    if (!this.state.subBloco) { this.renderSubBlocos(); Screens.go('subbloco'); return; }
     Busca.prepararLocal();
     Screens.go('busca');
   },
@@ -449,16 +462,15 @@ const App = {
 
   _compartilharLista(lista, titulo) {
     const linhas = [
-      '*' + titulo + ' — Seatrium NPO*',
+      '*Resumo de atividade — Elétrica e Automação - Seatrium NPO*',
       'Responsável: ' + (lista[0].responsavelExecucao || '—'),
       'Atividade: ' + (lista[0].atividade || '—'),
       'Local: ' + (lista[0].bloco || '—') + ' / ' + (lista[0].subBloco || '—'),
-      '',
     ];
     lista.forEach((a) => {
       linhas.push('• ' + a.tag + ' — ' + a.statusNovo + (a.observacao ? ' (' + a.observacao + ')' : ''));
     });
-    linhas.push('', 'Total: ' + lista.length + ' item(ns)');
+    linhas.push('Total: ' + lista.length + ' item(ns)');
     const texto = linhas.join('\n');
     window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
   },
@@ -612,11 +624,12 @@ const Sync = {
     const el = document.getElementById('listaSync');
     if (!all.length) { el.innerHTML = '<div class="empty-state">Nenhum apontamento registrado ainda.</div>'; return; }
     el.innerHTML = all.slice().reverse().map((a) =>
-      '<div class="candidate-card" style="border-left-color:' + (a.synced ? 'var(--success)' : 'var(--amber, var(--accent))') + '">' +
+      '<div class="candidate-card" style="border-left-color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--accent)')) + '">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
-      '<div class="candidate-tag">' + a.tag + ' <span style="font-size:11px; font-weight:700; color:' + (a.synced ? 'var(--success)' : 'var(--warning)') + '">' + (a.synced ? '✓ sincronizado' : '⏳ pendente') + '</span></div>' +
+      '<div class="candidate-tag">' + a.tag + ' <span style="font-size:11px; font-weight:700; color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--warning)')) + '">' + (a.synced ? '✓ sincronizado' : (a.erroSync ? '✗ erro' : '⏳ pendente')) + '</span></div>' +
       '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Sync.excluirItem(' + a.id + ')">excluir</button>' +
       '</div>' +
+      (a.erroSync ? '<div style="font-size:12px; color:var(--danger); margin-top:4px">' + a.erroSync + '</div>' : '') +
       '<div class="candidate-details">' +
       '<span><b>' + a.statusNovo + '</b></span>' +
       '<span>' + a.bloco + ' / ' + a.subBloco + '</span>' +
@@ -648,10 +661,17 @@ const Sync = {
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita preflight CORS no Apps Script
           body: JSON.stringify(item),
         });
-        if (resp.ok) {
+        let corpo = null;
+        try { corpo = await resp.json(); } catch (e) { /* resposta não era JSON */ }
+        if (resp.ok && corpo && corpo.status === 'ok') {
           item.synced = 1;
           item.syncedAt = new Date().toISOString();
+          item.erroSync = null;
           await dbPut('apontamentos', item);
+        } else {
+          item.erroSync = (corpo && corpo.message) ? corpo.message : ('Resposta inesperada do servidor (HTTP ' + resp.status + ')');
+          await dbPut('apontamentos', item);
+          console.warn('Apps Script retornou erro para o item', item.id, item.erroSync);
         }
       } catch (err) {
         console.warn('Falha ao sincronizar item', item.id, err);

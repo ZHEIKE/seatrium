@@ -17,12 +17,14 @@
   <!-- TOP BAR -->
   <div class="topbar">
     <div class="topbar-row">
-      <div>
-        <div class="topbar-title">Apontamento de Campo</div>
-        <div class="topbar-sub" id="topbarSub">Projeto NPO</div>
+      <div class="topbar-brand">
+        <img src="assets/seatrium-logo.png" alt="Seatrium" class="brand-mark">
+        <div class="topbar-sector">Elétrica e Automação · EA</div>
       </div>
       <div class="status-pill offline" id="connStatus">Offline</div>
     </div>
+    <div class="topbar-sub" id="topbarSub">Apontamento de Campo — Projeto NPO</div>
+    <div class="topbar-sub" id="topbarOperador" style="display:none"></div>
     <button class="pending-badge" id="pendingBadge" style="display:none" onclick="Screens.go('sync')">
       <span id="pendingCount"><b>0</b> apontamento(s) aguardando sincronizar</span>
     </button>
@@ -176,7 +178,7 @@
     </div>
 
     <div class="field-group">
-      <label class="field-label field-required">Foto da etiqueta / peça</label>
+      <label class="field-label">Foto da etiqueta / peça (opcional)</label>
       <div id="photoArea">
         <div class="photo-box" onclick="document.getElementById('inputFoto').click()">
           📷 Toque para tirar ou anexar foto
@@ -192,23 +194,27 @@
 
   <!-- ===================== TELA: CONFIRMACAO ===================== -->
   <div class="screen" id="screen-confirmacao">
+    <button class="link-btn" style="margin-bottom:10px; align-self:flex-start" onclick="Screens.voltar()">← Voltar</button>
     <div class="confirm-icon">✓</div>
     <div class="screen-title" style="text-align:center">Apontamento salvo</div>
     <div class="screen-desc" style="text-align:center" id="confirmacaoDesc">
       Salvo neste aparelho. Será enviado automaticamente quando houver internet.
     </div>
     <div class="btn-block-list">
-      <button class="btn btn-secondary" onclick="App.compartilharWhatsApp()">📤 Compartilhar resumo no WhatsApp</button>
-      <button class="btn btn-primary" onclick="App.novoApontamentoMesmoLocal()">Novo apontamento (mesmo Bloco/Sub-bloco)</button>
+      <button class="btn btn-primary" onclick="App.novoApontamentoMesmoLocal()">+ Adicionar mais um item</button>
       <button class="btn btn-secondary" onclick="Screens.go('atividade')">Trocar de Atividade/Bloco</button>
-      <button class="btn btn-ghost" onclick="Screens.go('sync')">Ver fila de sincronização</button>
+      <button class="btn btn-ghost" onclick="Screens.go('sync')">Ver fila e compartilhar no WhatsApp</button>
     </div>
   </div>
 
   <!-- ===================== TELA: SYNC ===================== -->
   <div class="screen" id="screen-sync">
+    <button class="link-btn" style="margin-bottom:10px; align-self:flex-start" onclick="Screens.voltar()">← Voltar</button>
     <div class="screen-title">Fila de sincronização</div>
     <div class="screen-desc">Apontamentos salvos neste aparelho. Enviados automaticamente ao detectar internet.</div>
+    <div class="btn-block-list" style="margin-bottom:16px">
+      <button class="btn btn-primary" onclick="App.adicionarNovoApontamento()">+ Adicionar novo apontamento</button>
+    </div>
     <div id="listaSync"></div>
     <div class="action-bar">
       <button class="btn btn-secondary" style="margin-bottom:8px" onclick="App.compartilharFilaWhatsApp()">📤 Compartilhar fila no WhatsApp</button>
