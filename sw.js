@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apontamento-npo-v8';
+const CACHE_NAME = 'apontamento-npo-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -6,10 +6,10 @@ const ASSETS = [
   './app.js',
   './tags_data.json',
   './manifest.json',
-  './assets/seatrium-logo.png',
-  './assets/ea-logo.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
+  './seatrium-logo.png',
+  './ea-logo.png',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
