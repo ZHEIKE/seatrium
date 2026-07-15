@@ -76,6 +76,7 @@ const Screens = {
     Screens.renderCrumbs(name);
     window.scrollTo(0, 0);
     if (name === 'sync') Sync.renderQueue();
+    if (name === 'confirmacao') App.renderResumoConfirmacao();
     if (name === 'config') App.renderConfig();
   },
   voltar() {
@@ -113,6 +114,7 @@ const App = {
     status: null,
     fotoBase64: null,
     ultimoLote: [],
+    sessao: [],
   },
 
   async init() {
@@ -123,7 +125,7 @@ const App = {
     window.addEventListener('online', () => { this.atualizarStatusConexao(); Sync.sincronizarAgora(); });
     window.addEventListener('offline', () => this.atualizarStatusConexao());
     await Sync.atualizarBadge();
-    if (navigator.onLine) Sync.sincronizarAgora();
+    if (navigator.onLine) { Sync.sincronizarAgora(); Sync.atualizarTagsReportadasRemoto(); }
   },
 
   async carregarTagsData() {
@@ -173,6 +175,7 @@ const App = {
   },
   selecionarOperador(nome) {
     this.state.operador = nome;
+    this.state.sessao = [];
     const elOp = document.getElementById('topbarOperador');
     elOp.textContent = 'Operador: ' + nome;
     elOp.style.display = 'block';
@@ -256,6 +259,11 @@ const App = {
 
   /* ---------- Seleção de TAG / apontamento ---------- */
   selecionarTag(tag) {
+    this.state.tagJaReportada = Busca.tagsReportadas.has(tag.t);
+    if (this.state.tagJaReportada) {
+      const confirmar = confirm('A TAG ' + tag.t + ' já foi reportada como "Instalado". Deseja mesmo continuar? (use apenas para corrigir um registro anterior)');
+      if (!confirmar) return;
+    }
     this.state.tagSelecionada = tag;
     this.renderDetalheTag('detalheTagCard');
     Screens.go('confirmarTag');
@@ -332,13 +340,16 @@ const App = {
       fotoBase64: this.state.fotoBase64,
       dataApontamento: new Date().toISOString(),
       synced: 0,
+      jaReportadaAntes: !!this.state.tagJaReportada,
     };
     await dbAdd('apontamentos', registro);
     this.state.ultimoLote = [registro];
+    this.state.sessao.push(registro);
     // reset campos do formulário (mantém local/operador)
     this.state.tagSelecionada = null;
     this.state.status = null;
     this.state.fotoBase64 = null;
+    this.state.tagJaReportada = false;
     document.getElementById('inputObservacao').value = '';
     document.getElementById('photoArea').innerHTML =
       '<div class="photo-box" onclick="document.getElementById(\'inputFoto\').click()">📷 Toque para tirar ou anexar foto</div>';
@@ -352,6 +363,22 @@ const App = {
   novoApontamentoMesmoLocal() {
     Busca.prepararLocal();
     Screens.go('busca');
+  },
+
+  renderResumoConfirmacao() {
+    const el = document.getElementById('listaResumoConfirmacao');
+    if (!el) return;
+    const lista = this.state.sessao;
+    if (!lista.length) { el.innerHTML = '<div class="empty-state">Nenhum item nesta sessão.</div>'; return; }
+    el.innerHTML = lista.slice().reverse().map((a) => Sync.itemCardHTML(a, { permitirExcluir: false })).join('');
+  },
+
+  async concluirECompartilhar() {
+    if (!this.state.sessao.length) { alert('Nenhum apontamento nesta sessão pra compartilhar.'); return; }
+    if (navigator.onLine) { await Sync.sincronizarAgora(); }
+    this._compartilharLista(this.state.sessao, 'Resumo de atividade');
+    this.state.sessao = [];
+    Screens.go('atividade');
   },
 
   adicionarNovoApontamento() {
@@ -435,9 +462,11 @@ const App = {
         fotoBase64: this.loteFotoBase64,
         dataApontamento: agora,
         synced: 0,
+        jaReportadaAntes: Busca.tagsReportadas.has(t.t),
       };
       await dbAdd('apontamentos', registro);
       registros.push(registro);
+      this.state.sessao.push(registro);
     }
     this.state.ultimoLote = registros;
     await Sync.atualizarBadge();
@@ -447,12 +476,6 @@ const App = {
   },
 
   /* ---------- Compartilhar via WhatsApp ---------- */
-  compartilharWhatsApp() {
-    const lista = this.state.ultimoLote;
-    if (!lista || !lista.length) { alert('Nenhum apontamento recente para compartilhar.'); return; }
-    this._compartilharLista(lista, 'Resumo de apontamento');
-  },
-
   async compartilharFilaWhatsApp() {
     const all = await dbGetAll('apontamentos');
     const pendentes = all.filter((a) => !a.synced);
@@ -468,7 +491,8 @@ const App = {
       'Local: ' + (lista[0].bloco || '—') + ' / ' + (lista[0].subBloco || '—'),
     ];
     lista.forEach((a) => {
-      linhas.push('• ' + a.tag + ' — ' + a.statusNovo + (a.observacao ? ' (' + a.observacao + ')' : ''));
+      const aviso = a.jaReportadaAntes ? ' ⚠(já reportada antes)' : '';
+      linhas.push('• ' + a.tag + ' — ' + a.statusNovo + (a.observacao ? ' (' + a.observacao + ')' : '') + aviso);
     });
     linhas.push('Total: ' + lista.length + ' item(ns)');
     const texto = linhas.join('\n');
@@ -536,7 +560,24 @@ const Busca = {
     document.getElementById('barraSelecaoMultipla').style.display = 'none';
     document.getElementById('btnToggleMulti').textContent = 'Selecionar várias';
     App.state.padraoDigitado = '';
-    this.renderCandidatos(this.candidatosLocal);
+    this.atualizarTagsReportadas().then(() => this.renderCandidatos(this.candidatosLocal));
+  },
+
+  tagsReportadas: new Set(),
+
+  async atualizarTagsReportadas() {
+    const set = new Set();
+    // 1) TAGs que este próprio aparelho já marcou como Instalado (inclui pendentes de sync)
+    try {
+      const locais = await dbGetAll('apontamentos');
+      locais.forEach((a) => { if (a.statusNovo === 'Instalado') set.add(a.tag); });
+    } catch (e) { /* IndexedDB pode ainda não estar pronto */ }
+    // 2) TAGs que a planilha (equipe toda) já tem como Instalado, última vez que conseguiu buscar
+    try {
+      const remoto = JSON.parse(localStorage.getItem('tagsReportadasRemoto') || '[]');
+      remoto.forEach((t) => set.add(t));
+    } catch (e) { /* ignora */ }
+    this.tagsReportadas = set;
   },
 
   alternarModoMultiplo() {
@@ -588,10 +629,16 @@ const Busca = {
     const multi = this.modoMultiplo;
     el.innerHTML = window.__candidatos.map((t, i) => {
       const selecionado = multi && this.selecionados[t.t];
+      const reportada = this.tagsReportadas.has(t.t);
       const acao = multi ? "Busca.toggleSelecao(window.__candidatos[" + i + "])" : "App.selecionarTag(window.__candidatos[" + i + "])";
       const checkbox = multi ? '<span style="float:right; font-size:16px">' + (selecionado ? '☑' : '☐') + '</span>' : '';
-      return '<div class="candidate-card" style="' + (selecionado ? 'border-left-color:var(--success); background:var(--success-bg)' : '') + '" onclick="' + acao + '">' +
+      let corBorda = 'var(--accent)';
+      let corFundo = '';
+      if (selecionado) { corBorda = 'var(--success)'; corFundo = 'background:var(--success-bg);'; }
+      else if (reportada) { corBorda = 'var(--danger)'; corFundo = 'background:var(--danger-bg);'; }
+      return '<div class="candidate-card" style="border-left-color:' + corBorda + ';' + corFundo + '" onclick="' + acao + '">' +
         checkbox +
+        (reportada ? '<div style="font-size:11px; font-weight:800; color:var(--danger); letter-spacing:0.03em; margin-bottom:3px">⚠ TAG JÁ REPORTADA (INSTALADO)</div>' : '') +
         '<div class="candidate-tag">' + t.t + '</div>' +
         '<div class="candidate-details">' +
         '<span><b>' + (t.d || '—') + '</b></span>' +
@@ -607,6 +654,39 @@ const Busca = {
    Sync — fila local de apontamentos -> Google Apps Script (Web App)
    --------------------------------------------------------------------- */
 const Sync = {
+  itemCardHTML(a, opts) {
+    opts = opts || {};
+    const permitirExcluir = opts.permitirExcluir !== false;
+    return '<div class="candidate-card" style="border-left-color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--accent)')) + '">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
+      '<div class="candidate-tag">' + a.tag + ' <span style="font-size:11px; font-weight:700; color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--warning)')) + '">' + (a.synced ? '✓ sincronizado' : (a.erroSync ? '✗ erro' : '⏳ pendente')) + '</span></div>' +
+      (permitirExcluir && a.id ? '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Sync.excluirItem(' + a.id + ')">excluir</button>' : '') +
+      '</div>' +
+      (a.jaReportadaAntes ? '<div style="font-size:11px; font-weight:800; color:var(--danger); margin-top:2px">⚠ já reportada antes</div>' : '') +
+      (a.erroSync ? '<div style="font-size:12px; color:var(--danger); margin-top:4px">' + a.erroSync + '</div>' : '') +
+      '<div class="candidate-details">' +
+      '<span><b>' + a.statusNovo + '</b></span>' +
+      '<span>' + a.bloco + ' / ' + a.subBloco + '</span>' +
+      '<span>' + a.responsavelExecucao + '</span>' +
+      '<span>' + new Date(a.dataApontamento).toLocaleString('pt-BR') + '</span>' +
+      '</div></div>';
+  },
+
+  async atualizarTagsReportadasRemoto() {
+    const url = localStorage.getItem('syncUrl');
+    if (!url || !navigator.onLine) return;
+    try {
+      const resp = await fetch(url + '?action=reportadas');
+      const corpo = await resp.json();
+      if (corpo && corpo.status === 'ok' && Array.isArray(corpo.tags)) {
+        localStorage.setItem('tagsReportadasRemoto', JSON.stringify(corpo.tags));
+        localStorage.setItem('tagsReportadasAtualizadoEm', new Date().toISOString());
+      }
+    } catch (err) {
+      console.warn('Falha ao buscar TAGs já reportadas:', err);
+    }
+  },
+
   async atualizarBadge() {
     const all = await dbGetAll('apontamentos');
     const pendentes = all.filter((a) => !a.synced);
@@ -623,20 +703,7 @@ const Sync = {
     const all = await dbGetAll('apontamentos');
     const el = document.getElementById('listaSync');
     if (!all.length) { el.innerHTML = '<div class="empty-state">Nenhum apontamento registrado ainda.</div>'; return; }
-    el.innerHTML = all.slice().reverse().map((a) =>
-      '<div class="candidate-card" style="border-left-color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--accent)')) + '">' +
-      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
-      '<div class="candidate-tag">' + a.tag + ' <span style="font-size:11px; font-weight:700; color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--warning)')) + '">' + (a.synced ? '✓ sincronizado' : (a.erroSync ? '✗ erro' : '⏳ pendente')) + '</span></div>' +
-      '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Sync.excluirItem(' + a.id + ')">excluir</button>' +
-      '</div>' +
-      (a.erroSync ? '<div style="font-size:12px; color:var(--danger); margin-top:4px">' + a.erroSync + '</div>' : '') +
-      '<div class="candidate-details">' +
-      '<span><b>' + a.statusNovo + '</b></span>' +
-      '<span>' + a.bloco + ' / ' + a.subBloco + '</span>' +
-      '<span>' + a.responsavelExecucao + '</span>' +
-      '<span>' + new Date(a.dataApontamento).toLocaleString('pt-BR') + '</span>' +
-      '</div></div>'
-    ).join('');
+    el.innerHTML = all.slice().reverse().map((a) => this.itemCardHTML(a)).join('');
   },
 
   async excluirItem(id) {
@@ -681,6 +748,7 @@ const Sync = {
     if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar agora'; }
     await this.atualizarBadge();
     this.renderQueue();
+    this.atualizarTagsReportadasRemoto();
   }
 };
 

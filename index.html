@@ -98,7 +98,7 @@
         <button class="link-btn" id="btnToggleMulti" onclick="Busca.alternarModoMultiplo()">Selecionar várias</button>
       </div>
       <input type="text" class="search-input" id="inputBusca" placeholder="Digite o que conseguir ler da TAG..." autocomplete="off">
-      <div class="search-hint">Digite qualquer trecho legível, em qualquer posição. Etiqueta corroída? Digite só o que der — a lista já mostra os itens mais prováveis desse local.</div>
+      <div class="search-hint">Digite qualquer trecho legível, em qualquer posição. Etiqueta corroída? Digite só o que der — a lista já mostra os itens mais prováveis desse local. <span style="color:var(--danger); font-weight:600">Itens em vermelho já foram reportados como instalados.</span></div>
     </div>
     <div id="listaCandidatos"></div>
     <div class="action-bar" id="barraSelecaoMultipla" style="display:none">
@@ -207,10 +207,12 @@
     <div class="screen-desc" style="text-align:center" id="confirmacaoDesc">
       Salvo neste aparelho. Será enviado automaticamente quando houver internet.
     </div>
+    <div class="candidate-count" style="margin-top:4px">Resumo desta sessão</div>
+    <div id="listaResumoConfirmacao" style="margin-bottom:16px"></div>
     <div class="btn-block-list">
-      <button class="btn btn-primary" onclick="App.novoApontamentoMesmoLocal()">+ Adicionar mais um item</button>
-      <button class="btn btn-secondary" onclick="Screens.go('atividade')">Trocar de Atividade/Bloco</button>
-      <button class="btn btn-ghost" onclick="Screens.go('sync')">Ver fila e compartilhar no WhatsApp</button>
+      <button class="btn btn-primary" onclick="App.novoApontamentoMesmoLocal()">+ Adicionar mais itens deste Sub-bloco</button>
+      <button class="btn btn-secondary" onclick="Screens.go('atividade')">Adicionar outra atividade ou tags de outros blocos</button>
+      <button class="btn btn-secondary" style="border-color:var(--success); color:var(--success)" onclick="App.concluirECompartilhar()">✅ Concluir apontamento e compartilhar no WhatsApp</button>
     </div>
   </div>
 

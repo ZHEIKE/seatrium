@@ -80,7 +80,30 @@ function salvarFoto(base64Data, tag) {
 }
 
 // Healthcheck simples - abrir a URL /exec direto no navegador deve mostrar isto
+// Também aceita ?action=reportadas para retornar as TAGs já marcadas como "Instalado"
 function doGet(e) {
+  const action = e && e.parameter && e.parameter.action;
+
+  if (action === 'reportadas') {
+    try {
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+      const data = sheet.getDataRange().getValues();
+      const tags = [];
+      // Colunas: A=TAG, B=Atividade, C=Bloco, D=SubBloco, E=StatusNovo
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][4] === 'Instalado' && data[i][0]) tags.push(data[i][0]);
+      }
+      const unicas = Array.from(new Set(tags));
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok', tags: unicas }))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'online', servico: 'Apontamento NPO' }))
     .setMimeType(ContentService.MimeType.JSON);
