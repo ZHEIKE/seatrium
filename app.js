@@ -10,6 +10,32 @@ let TAGS = [];              // dataset completo carregado de tags_data.json
 let TAGS_BY_LOCAL = {};     // cache "BLOCO||SUBBLOCO" -> array ordenado por score
 
 /* ---------------------------------------------------------------------
+   Status disponíveis variam por Atividade, e cada um tem uma cor semântica.
+   STATUS_CONCLUIDO define quais valores contam como "item pronto/instalado"
+   para fins de detecção de TAG já reportada (local e via planilha).
+   --------------------------------------------------------------------- */
+const STATUS_POR_ATIVIDADE = {
+  'Montagem de Equipamentos': ['Instalado', 'Retrabalho'],
+  'Montagem de Suporte': ['Visual', 'Montado', 'Retrabalho'],
+  'Montagem de Moldura MCT': ['Visual', 'Montado', 'Retrabalho'],
+  'Montagem de Penetração/Colar': ['Visual', 'Montado', 'Retrabalho'],
+  'Montagem de Bandejamento': ['Parcial', 'Total'],
+};
+const STATUS_COR = {
+  'Instalado': 'success',
+  'Montado': 'success',
+  'Total': 'success',
+  'Visual': 'warning',
+  'Parcial': 'warning',
+  'Retrabalho': 'danger',
+};
+const STATUS_CONCLUIDO = new Set(['Instalado', 'Montado', 'Total']);
+
+function statusOpcoesPara(atividade) {
+  return STATUS_POR_ATIVIDADE[atividade] || ['Instalado', 'Em andamento', 'Problema'];
+}
+
+/* ---------------------------------------------------------------------
    IndexedDB — só para a fila de apontamentos (dado que precisa persistir
    e ser reenviado). Nomes/URL de sync ficam em localStorage (mais simples).
    --------------------------------------------------------------------- */
@@ -261,12 +287,26 @@ const App = {
   selecionarTag(tag) {
     this.state.tagJaReportada = Busca.tagsReportadas.has(tag.t);
     if (this.state.tagJaReportada) {
-      const confirmar = confirm('A TAG ' + tag.t + ' já foi reportada como "Instalado". Deseja mesmo continuar? (use apenas para corrigir um registro anterior)');
+      const confirmar = confirm('A TAG ' + tag.t + ' já foi reportada como concluída. Deseja mesmo continuar? (use apenas para corrigir um registro anterior)');
       if (!confirmar) return;
     }
     this.state.tagSelecionada = tag;
     this.renderDetalheTag('detalheTagCard');
     Screens.go('confirmarTag');
+  },
+
+  abrirApontamento() {
+    this.renderStatusChoices();
+    Screens.go('apontamento');
+  },
+
+  renderStatusChoices() {
+    const opcoes = statusOpcoesPara(this.state.atividade);
+    const el = document.getElementById('statusChoices');
+    el.style.gridTemplateColumns = 'repeat(' + opcoes.length + ', 1fr)';
+    el.innerHTML = opcoes.map((s) =>
+      '<div class="choice-btn" data-status="' + s + '" data-cor="' + (STATUS_COR[s] || 'success') + '" onclick="App.setStatus(\'' + s + '\')">' + s + '</div>'
+    ).join('');
   },
   renderDetalheTag(elId) {
     const t = this.state.tagSelecionada;
@@ -289,8 +329,8 @@ const App = {
 
   setStatus(status) {
     this.state.status = status;
-    document.querySelectorAll('#screen-apontamento .choice-btn').forEach((b) => b.classList.remove('selected'));
-    document.querySelector('#screen-apontamento .choice-btn[data-status="' + status + '"]').classList.add('selected');
+    document.querySelectorAll('#statusChoices .choice-btn').forEach((b) => b.classList.remove('selected'));
+    document.querySelector('#statusChoices .choice-btn[data-status="' + status + '"]').classList.add('selected');
     this.validarFormApontamento();
   },
 
@@ -404,12 +444,21 @@ const App = {
     document.getElementById('inputObservacaoLote').value = '';
     document.getElementById('photoAreaLote').innerHTML =
       '<div class="photo-box" onclick="document.getElementById(\'inputFotoLote\').click()">📷 Toque para tirar ou anexar uma foto do conjunto</div>';
-    document.querySelectorAll('#screen-apontamentoLote .choice-btn').forEach((b) => b.classList.remove('selected'));
+    this.renderStatusChoicesLote();
     document.getElementById('btnSalvarLote').disabled = true;
     const card = document.getElementById('resumoLoteCard');
     card.innerHTML = '<div class="detail-tag">' + lista.length + ' TAG(s) selecionada(s)</div>' +
       lista.map((t) => '<div style="font-family:var(--mono); font-size:13px; padding:4px 0; border-bottom:1px solid var(--line)">' + t.t + ' <span style="color:var(--mut); font-family:var(--sans)">— ' + (t.d || '') + '</span></div>').join('');
     Screens.go('apontamentoLote');
+  },
+
+  renderStatusChoicesLote() {
+    const opcoes = statusOpcoesPara(this.state.atividade);
+    const el = document.getElementById('statusChoicesLote');
+    el.style.gridTemplateColumns = 'repeat(' + opcoes.length + ', 1fr)';
+    el.innerHTML = opcoes.map((s) =>
+      '<div class="choice-btn" data-status-lote="' + s + '" data-cor="' + (STATUS_COR[s] || 'success') + '" onclick="App.setStatusLote(\'' + s + '\')">' + s + '</div>'
+    ).join('');
   },
 
   setStatusLote(status) {
@@ -570,7 +619,7 @@ const Busca = {
     // 1) TAGs que este próprio aparelho já marcou como Instalado (inclui pendentes de sync)
     try {
       const locais = await dbGetAll('apontamentos');
-      locais.forEach((a) => { if (a.statusNovo === 'Instalado') set.add(a.tag); });
+      locais.forEach((a) => { if (STATUS_CONCLUIDO.has(a.statusNovo)) set.add(a.tag); });
     } catch (e) { /* IndexedDB pode ainda não estar pronto */ }
     // 2) TAGs que a planilha (equipe toda) já tem como Instalado, última vez que conseguiu buscar
     try {
@@ -638,7 +687,7 @@ const Busca = {
       else if (reportada) { corBorda = 'var(--danger)'; corFundo = 'background:var(--danger-bg);'; }
       return '<div class="candidate-card" style="border-left-color:' + corBorda + ';' + corFundo + '" onclick="' + acao + '">' +
         checkbox +
-        (reportada ? '<div style="font-size:11px; font-weight:800; color:var(--danger); letter-spacing:0.03em; margin-bottom:3px">⚠ TAG JÁ REPORTADA (INSTALADO)</div>' : '') +
+        (reportada ? '<div style="font-size:11px; font-weight:800; color:var(--danger); letter-spacing:0.03em; margin-bottom:3px">⚠ TAG JÁ REPORTADA COMO CONCLUÍDA</div>' : '') +
         '<div class="candidate-tag">' + t.t + '</div>' +
         '<div class="candidate-details">' +
         '<span><b>' + (t.d || '—') + '</b></span>' +

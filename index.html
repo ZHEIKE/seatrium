@@ -115,11 +115,7 @@
 
     <div class="field-group">
       <label class="field-label field-required">Status</label>
-      <div class="choice-grid">
-        <div class="choice-btn status-instalado" data-status-lote="Instalado" onclick="App.setStatusLote('Instalado')">Instalado</div>
-        <div class="choice-btn status-andamento" data-status-lote="Em andamento" onclick="App.setStatusLote('Em andamento')">Em andamento</div>
-        <div class="choice-btn status-problema" data-status-lote="Problema" onclick="App.setStatusLote('Problema')">Problema</div>
-      </div>
+      <div class="choice-grid" id="statusChoicesLote"></div>
     </div>
 
     <div class="field-group">
@@ -148,7 +144,7 @@
     <div class="screen-title">É esse item?</div>
     <div class="detail-card" id="detalheTagCard"></div>
     <div class="btn-block-list">
-      <button class="btn btn-primary" onclick="Screens.go('apontamento')">Sim, é este item</button>
+      <button class="btn btn-primary" onclick="App.abrirApontamento()">Sim, é este item</button>
       <button class="btn btn-secondary" onclick="Screens.go('busca')">Não, voltar à busca</button>
     </div>
   </div>
@@ -161,11 +157,7 @@
 
     <div class="field-group">
       <label class="field-label field-required">Status</label>
-      <div class="choice-grid">
-        <div class="choice-btn status-instalado" data-status="Instalado" onclick="App.setStatus('Instalado')">Instalado</div>
-        <div class="choice-btn status-andamento" data-status="Em andamento" onclick="App.setStatus('Em andamento')">Em andamento</div>
-        <div class="choice-btn status-problema" data-status="Problema" onclick="App.setStatus('Problema')">Problema</div>
-      </div>
+      <div class="choice-grid" id="statusChoices"></div>
     </div>
 
     <div class="field-group">

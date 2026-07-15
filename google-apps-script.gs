@@ -86,12 +86,13 @@ function doGet(e) {
 
   if (action === 'reportadas') {
     try {
+      const STATUS_CONCLUIDO = ['Instalado', 'Montado', 'Total'];
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
       const data = sheet.getDataRange().getValues();
       const tags = [];
       // Colunas: A=TAG, B=Atividade, C=Bloco, D=SubBloco, E=StatusNovo
       for (let i = 1; i < data.length; i++) {
-        if (data[i][4] === 'Instalado' && data[i][0]) tags.push(data[i][0]);
+        if (STATUS_CONCLUIDO.indexOf(data[i][4]) !== -1 && data[i][0]) tags.push(data[i][0]);
       }
       const unicas = Array.from(new Set(tags));
       return ContentService

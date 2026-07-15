@@ -399,9 +399,9 @@ body {
   cursor: pointer;
 }
 .choice-btn.selected { border-color: var(--accent); background: var(--card2); color: var(--accent); }
-.choice-btn.status-instalado.selected { border-color: var(--success); background: var(--success-bg); color: var(--success); }
-.choice-btn.status-problema.selected { border-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
-.choice-btn.status-andamento.selected { border-color: var(--warning); background: var(--warning-bg); color: var(--warning); }
+.choice-btn.selected[data-cor="success"] { border-color: var(--success); background: var(--success-bg); color: var(--success); }
+.choice-btn.selected[data-cor="danger"] { border-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+.choice-btn.selected[data-cor="warning"] { border-color: var(--warning); background: var(--warning-bg); color: var(--warning); }
 
 textarea, select {
   width: 100%;
