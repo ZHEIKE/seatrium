@@ -93,9 +93,20 @@
   <div class="screen" id="screen-busca">
     <button class="link-btn" style="margin-bottom:10px; align-self:flex-start" onclick="Screens.voltar()">← Voltar</button>
     <div class="search-wrap">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px">
         <span class="candidate-count" style="margin:0" id="candidateCount"></span>
-        <button class="link-btn" id="btnToggleMulti" onclick="Busca.alternarModoMultiplo()">Selecionar várias</button>
+        <div style="display:flex; gap:12px">
+          <button class="link-btn" onclick="Busca.abrirColar()">📋 Colar lista</button>
+          <button class="link-btn" id="btnToggleMulti" onclick="Busca.alternarModoMultiplo()">Selecionar várias</button>
+        </div>
+      </div>
+      <div id="painelColar" style="display:none; margin-bottom:14px">
+        <textarea id="textareaColar" placeholder="Cole aqui várias TAGs — uma por linha, ou separadas por vírgula/espaço/tab. Só busca dentro deste Bloco/Sub-bloco." style="min-height:100px; width:100%; font-family:var(--mono); font-size:12.5px; padding:10px; border-radius:10px; border:1.5px solid var(--line); background:white;"></textarea>
+        <div style="display:flex; gap:8px; margin-top:8px">
+          <button class="btn btn-primary" style="min-height:44px" onclick="Busca.processarColagem()">Buscar TAGs coladas</button>
+          <button class="btn btn-secondary" style="min-height:44px; width:auto; padding:0 18px; flex:none" onclick="Busca.fecharColar()">Cancelar</button>
+        </div>
+        <div id="resultadoColagem" style="margin-top:10px; font-size:12.5px; line-height:1.5"></div>
       </div>
       <input type="text" class="search-input" id="inputBusca" placeholder="Digite o que conseguir ler da TAG..." autocomplete="off">
       <div class="search-hint">Digite qualquer trecho legível, em qualquer posição. Etiqueta corroída? Digite só o que der — a lista já mostra os itens mais prováveis desse local. <span style="color:var(--danger); font-weight:600">Itens em vermelho já foram reportados como instalados.</span></div>
@@ -114,7 +125,7 @@
     <div class="detail-card" id="resumoLoteCard"></div>
 
     <div class="field-group">
-      <label class="field-label field-required">Status</label>
+      <label class="field-label field-required">Status (pode marcar mais de um)</label>
       <div class="choice-grid" id="statusChoicesLote"></div>
     </div>
 
@@ -156,7 +167,7 @@
     <div class="detail-card" id="detalheTagResumo"></div>
 
     <div class="field-group">
-      <label class="field-label field-required">Status</label>
+      <label class="field-label field-required">Status (pode marcar mais de um)</label>
       <div class="choice-grid" id="statusChoices"></div>
     </div>
 

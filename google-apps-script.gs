@@ -86,17 +86,18 @@ function doGet(e) {
 
   if (action === 'reportadas') {
     try {
-      const STATUS_CONCLUIDO = ['Instalado', 'Montado', 'Total'];
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
       const data = sheet.getDataRange().getValues();
-      const tags = [];
+      const pares = [];
       // Colunas: A=TAG, B=Atividade, C=Bloco, D=SubBloco, E=StatusNovo
       for (let i = 1; i < data.length; i++) {
-        if (STATUS_CONCLUIDO.indexOf(data[i][4]) !== -1 && data[i][0]) tags.push(data[i][0]);
+        const tag = data[i][0];
+        const status = data[i][4];
+        if (tag && status) pares.push(tag + '||' + status);
       }
-      const unicas = Array.from(new Set(tags));
+      const unicos = Array.from(new Set(pares));
       return ContentService
-        .createTextOutput(JSON.stringify({ status: 'ok', tags: unicas }))
+        .createTextOutput(JSON.stringify({ status: 'ok', tags: unicos }))
         .setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService

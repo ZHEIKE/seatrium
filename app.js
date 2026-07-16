@@ -17,8 +17,8 @@ let TAGS_BY_LOCAL = {};     // cache "BLOCO||SUBBLOCO" -> array ordenado por sco
 const STATUS_POR_ATIVIDADE = {
   'Montagem de Equipamentos': ['Instalado', 'Retrabalho'],
   'Montagem de Suporte': ['Visual', 'Montado', 'Retrabalho'],
-  'Montagem de Moldura MCT': ['Visual', 'Montado', 'Retrabalho'],
-  'Montagem de Penetração/Colar': ['Visual', 'Montado', 'Retrabalho'],
+  'Montagem de Moldura MCT': ['Visual', 'Montado', 'Corte', 'Retrabalho'],
+  'Montagem de Penetração/Colar': ['Visual', 'Montado', 'Corte', 'Retrabalho'],
   'Montagem de Bandejamento': ['Parcial', 'Total'],
 };
 const STATUS_COR = {
@@ -27,9 +27,9 @@ const STATUS_COR = {
   'Total': 'success',
   'Visual': 'warning',
   'Parcial': 'warning',
+  'Corte': 'warning',
   'Retrabalho': 'danger',
 };
-const STATUS_CONCLUIDO = new Set(['Instalado', 'Montado', 'Total']);
 
 function statusOpcoesPara(atividade) {
   return STATUS_POR_ATIVIDADE[atividade] || ['Instalado', 'Em andamento', 'Problema'];
@@ -141,6 +141,8 @@ const App = {
     fotoBase64: null,
     ultimoLote: [],
     sessao: [],
+    statusSelecionados: [],
+    statusDuplicadoConfirmado: new Set(),
   },
 
   async init() {
@@ -285,17 +287,16 @@ const App = {
 
   /* ---------- Seleção de TAG / apontamento ---------- */
   selecionarTag(tag) {
-    this.state.tagJaReportada = Busca.tagsReportadas.has(tag.t);
-    if (this.state.tagJaReportada) {
-      const confirmar = confirm('A TAG ' + tag.t + ' já foi reportada como concluída. Deseja mesmo continuar? (use apenas para corrigir um registro anterior)');
-      if (!confirmar) return;
-    }
     this.state.tagSelecionada = tag;
+    this.state.statusSelecionados = [];
+    this.state.statusDuplicadoConfirmado = new Set();
     this.renderDetalheTag('detalheTagCard');
     Screens.go('confirmarTag');
   },
 
   abrirApontamento() {
+    this.state.statusSelecionados = [];
+    this.state.statusDuplicadoConfirmado = new Set();
     this.renderStatusChoices();
     Screens.go('apontamento');
   },
@@ -303,7 +304,8 @@ const App = {
   renderStatusChoices() {
     const opcoes = statusOpcoesPara(this.state.atividade);
     const el = document.getElementById('statusChoices');
-    el.style.gridTemplateColumns = 'repeat(' + opcoes.length + ', 1fr)';
+    const cols = opcoes.length <= 3 ? opcoes.length : 2;
+    el.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
     el.innerHTML = opcoes.map((s) =>
       '<div class="choice-btn" data-status="' + s + '" data-cor="' + (STATUS_COR[s] || 'success') + '" onclick="App.setStatus(\'' + s + '\')">' + s + '</div>'
     ).join('');
@@ -328,9 +330,21 @@ const App = {
   },
 
   setStatus(status) {
-    this.state.status = status;
-    document.querySelectorAll('#statusChoices .choice-btn').forEach((b) => b.classList.remove('selected'));
-    document.querySelector('#statusChoices .choice-btn[data-status="' + status + '"]').classList.add('selected');
+    const jaSelecionado = this.state.statusSelecionados.includes(status);
+    if (!jaSelecionado) {
+      const tag = this.state.tagSelecionada ? this.state.tagSelecionada.t : null;
+      const existentes = tag && Busca.tagsReportadas[tag];
+      if (existentes && existentes.has(status)) {
+        const ok = confirm('Essa TAG já tem o status "' + status + '" reportado antes. Reportar de novo mesmo assim?');
+        if (!ok) return;
+        this.state.statusDuplicadoConfirmado.add(status);
+      }
+      this.state.statusSelecionados.push(status);
+    } else {
+      this.state.statusSelecionados = this.state.statusSelecionados.filter((s) => s !== status);
+      this.state.statusDuplicadoConfirmado.delete(status);
+    }
+    document.querySelector('#statusChoices .choice-btn[data-status="' + status + '"]').classList.toggle('selected');
     this.validarFormApontamento();
   },
 
@@ -361,41 +375,46 @@ const App = {
   },
 
   validarFormApontamento() {
-    const ok = !!this.state.status;
+    const ok = this.state.statusSelecionados && this.state.statusSelecionados.length > 0;
     document.getElementById('btnSalvarApontamento').disabled = !ok;
   },
 
   async salvarApontamento() {
     const t = this.state.tagSelecionada;
-    const registro = {
-      tag: t.t,
-      atividade: this.state.atividade,
-      bloco: this.state.bloco,
-      subBloco: this.state.subBloco,
-      statusNovo: this.state.status,
-      observacao: document.getElementById('inputObservacao').value.trim(),
-      responsavelExecucao: this.state.operador,
-      nivelConfianca: document.getElementById('selectConfianca').value,
-      padraoDigitado: this.state.padraoDigitado || '',
-      fotoBase64: this.state.fotoBase64,
-      dataApontamento: new Date().toISOString(),
-      synced: 0,
-      jaReportadaAntes: !!this.state.tagJaReportada,
-    };
-    await dbAdd('apontamentos', registro);
-    this.state.ultimoLote = [registro];
-    this.state.sessao.push(registro);
+    const observacao = document.getElementById('inputObservacao').value.trim();
+    const nivelConfianca = document.getElementById('selectConfianca').value;
+    const registros = [];
+    for (const status of this.state.statusSelecionados) {
+      const registro = {
+        tag: t.t,
+        atividade: this.state.atividade,
+        bloco: this.state.bloco,
+        subBloco: this.state.subBloco,
+        statusNovo: status,
+        observacao: observacao,
+        responsavelExecucao: this.state.operador,
+        nivelConfianca: nivelConfianca,
+        padraoDigitado: this.state.padraoDigitado || '',
+        fotoBase64: this.state.fotoBase64,
+        dataApontamento: new Date().toISOString(),
+        synced: 0,
+        jaReportadaAntes: this.state.statusDuplicadoConfirmado.has(status),
+      };
+      await dbAdd('apontamentos', registro);
+      registros.push(registro);
+      this.state.sessao.push(registro);
+    }
+    this.state.ultimoLote = registros;
     // reset campos do formulário (mantém local/operador)
     this.state.tagSelecionada = null;
-    this.state.status = null;
+    this.state.statusSelecionados = [];
     this.state.fotoBase64 = null;
-    this.state.tagJaReportada = false;
     document.getElementById('inputObservacao').value = '';
     document.getElementById('photoArea').innerHTML =
       '<div class="photo-box" onclick="document.getElementById(\'inputFoto\').click()">📷 Toque para tirar ou anexar foto</div>';
     document.querySelectorAll('#screen-apontamento .choice-btn').forEach((b) => b.classList.remove('selected'));
     await Sync.atualizarBadge();
-    document.getElementById('confirmacaoDesc').textContent = '1 apontamento salvo neste aparelho. Será enviado automaticamente quando houver internet.';
+    document.getElementById('confirmacaoDesc').textContent = registros.length + ' apontamento(s) salvo(s) neste aparelho (' + registros.map((r) => r.statusNovo).join(', ') + '). Será enviado automaticamente quando houver internet.';
     Screens.go('confirmacao');
     if (navigator.onLine) Sync.sincronizarAgora();
   },
@@ -434,12 +453,12 @@ const App = {
 
   /* ---------- Apontamento em lote (várias TAGs de uma vez) ---------- */
   loteTags: [],
-  loteStatus: null,
+  loteStatusSelecionados: [],
   loteFotoBase64: null,
 
   iniciarLote(lista) {
     this.loteTags = lista;
-    this.loteStatus = null;
+    this.loteStatusSelecionados = [];
     this.loteFotoBase64 = null;
     document.getElementById('inputObservacaoLote').value = '';
     document.getElementById('photoAreaLote').innerHTML =
@@ -455,17 +474,22 @@ const App = {
   renderStatusChoicesLote() {
     const opcoes = statusOpcoesPara(this.state.atividade);
     const el = document.getElementById('statusChoicesLote');
-    el.style.gridTemplateColumns = 'repeat(' + opcoes.length + ', 1fr)';
+    const cols = opcoes.length <= 3 ? opcoes.length : 2;
+    el.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
     el.innerHTML = opcoes.map((s) =>
       '<div class="choice-btn" data-status-lote="' + s + '" data-cor="' + (STATUS_COR[s] || 'success') + '" onclick="App.setStatusLote(\'' + s + '\')">' + s + '</div>'
     ).join('');
   },
 
   setStatusLote(status) {
-    this.loteStatus = status;
-    document.querySelectorAll('#screen-apontamentoLote .choice-btn').forEach((b) => b.classList.remove('selected'));
-    document.querySelector('#screen-apontamentoLote .choice-btn[data-status-lote="' + status + '"]').classList.add('selected');
-    document.getElementById('btnSalvarLote').disabled = !this.loteStatus;
+    const jaSelecionado = this.loteStatusSelecionados.includes(status);
+    if (jaSelecionado) {
+      this.loteStatusSelecionados = this.loteStatusSelecionados.filter((s) => s !== status);
+    } else {
+      this.loteStatusSelecionados.push(status);
+    }
+    document.querySelector('#screen-apontamentoLote .choice-btn[data-status-lote="' + status + '"]').classList.toggle('selected');
+    document.getElementById('btnSalvarLote').disabled = this.loteStatusSelecionados.length === 0;
   },
 
   handleFotoLote(event) {
@@ -493,29 +517,32 @@ const App = {
   },
 
   async salvarApontamentoLote() {
-    if (!this.loteStatus || !this.loteTags.length) return;
+    if (!this.loteStatusSelecionados.length || !this.loteTags.length) return;
     const observacao = document.getElementById('inputObservacaoLote').value.trim();
     const agora = new Date().toISOString();
     const registros = [];
     for (const t of this.loteTags) {
-      const registro = {
-        tag: t.t,
-        atividade: this.state.atividade,
-        bloco: this.state.bloco,
-        subBloco: this.state.subBloco,
-        statusNovo: this.loteStatus,
-        observacao,
-        responsavelExecucao: this.state.operador,
-        nivelConfianca: 'Lote — ver observação',
-        padraoDigitado: '',
-        fotoBase64: this.loteFotoBase64,
-        dataApontamento: agora,
-        synced: 0,
-        jaReportadaAntes: Busca.tagsReportadas.has(t.t),
-      };
-      await dbAdd('apontamentos', registro);
-      registros.push(registro);
-      this.state.sessao.push(registro);
+      const existentes = Busca.tagsReportadas[t.t];
+      for (const status of this.loteStatusSelecionados) {
+        const registro = {
+          tag: t.t,
+          atividade: this.state.atividade,
+          bloco: this.state.bloco,
+          subBloco: this.state.subBloco,
+          statusNovo: status,
+          observacao,
+          responsavelExecucao: this.state.operador,
+          nivelConfianca: 'Lote — ver observação',
+          padraoDigitado: '',
+          fotoBase64: this.loteFotoBase64,
+          dataApontamento: agora,
+          synced: 0,
+          jaReportadaAntes: !!(existentes && existentes.has(status)),
+        };
+        await dbAdd('apontamentos', registro);
+        registros.push(registro);
+        this.state.sessao.push(registro);
+      }
     }
     this.state.ultimoLote = registros;
     await Sync.atualizarBadge();
@@ -608,25 +635,34 @@ const Busca = {
     document.getElementById('inputBusca').value = '';
     document.getElementById('barraSelecaoMultipla').style.display = 'none';
     document.getElementById('btnToggleMulti').textContent = 'Selecionar várias';
+    this.fecharColar();
     App.state.padraoDigitado = '';
     this.atualizarTagsReportadas().then(() => this.renderCandidatos(this.candidatosLocal));
   },
 
-  tagsReportadas: new Set(),
+  tagsReportadas: {},
 
   async atualizarTagsReportadas() {
-    const set = new Set();
-    // 1) TAGs que este próprio aparelho já marcou como Instalado (inclui pendentes de sync)
+    const mapa = {};
+    const addPar = (tag, status) => {
+      if (!tag || !status) return;
+      if (!mapa[tag]) mapa[tag] = new Set();
+      mapa[tag].add(status);
+    };
+    // 1) O que este próprio aparelho já registrou (inclui pendentes de sync), qualquer status
     try {
       const locais = await dbGetAll('apontamentos');
-      locais.forEach((a) => { if (STATUS_CONCLUIDO.has(a.statusNovo)) set.add(a.tag); });
+      locais.forEach((a) => addPar(a.tag, a.statusNovo));
     } catch (e) { /* IndexedDB pode ainda não estar pronto */ }
-    // 2) TAGs que a planilha (equipe toda) já tem como Instalado, última vez que conseguiu buscar
+    // 2) O que a planilha (equipe toda) já tem, última vez que conseguiu buscar (pares "tag||status")
     try {
       const remoto = JSON.parse(localStorage.getItem('tagsReportadasRemoto') || '[]');
-      remoto.forEach((t) => set.add(t));
+      remoto.forEach((par) => {
+        const idx = par.lastIndexOf('||');
+        if (idx > -1) addPar(par.slice(0, idx), par.slice(idx + 2));
+      });
     } catch (e) { /* ignora */ }
-    this.tagsReportadas = set;
+    this.tagsReportadas = mapa;
   },
 
   alternarModoMultiplo() {
@@ -649,6 +685,68 @@ const Busca = {
     const lista = Object.values(this.selecionados);
     if (!lista.length) { alert('Selecione ao menos uma TAG.'); return; }
     App.iniciarLote(lista);
+  },
+
+  abrirColar() {
+    document.getElementById('painelColar').style.display = 'block';
+    document.getElementById('textareaColar').focus();
+  },
+
+  fecharColar() {
+    document.getElementById('painelColar').style.display = 'none';
+    document.getElementById('textareaColar').value = '';
+    document.getElementById('resultadoColagem').innerHTML = '';
+  },
+
+  processarColagem() {
+    const texto = document.getElementById('textareaColar').value;
+    if (!texto.trim()) return;
+
+    // separa por linha, vírgula, ponto-e-vírgula ou tab; depois quebra também por espaço
+    // (cobre colar de coluna do Excel, lista separada por vírgula, ou uma TAG por linha)
+    const brutos = texto.split(/[\n,;\t]+/).map((s) => s.trim()).filter(Boolean);
+    let tokens = [];
+    brutos.forEach((b) => { b.split(/\s+/).forEach((s) => { if (s) tokens.push(s); }); });
+
+    // desduplica (case-insensitive)
+    const vistos = new Set();
+    tokens = tokens.filter((t) => {
+      const k = t.toUpperCase();
+      if (vistos.has(k)) return false;
+      vistos.add(k);
+      return true;
+    });
+
+    const encontrados = [];
+    const naoEncontrados = [];
+    tokens.forEach((tok) => {
+      const match = this.candidatosLocal.find((c) => c.t.toUpperCase() === tok.toUpperCase());
+      if (match) {
+        encontrados.push(match);
+        this.selecionados[match.t] = match;
+      } else {
+        naoEncontrados.push(tok);
+      }
+    });
+
+    // ativa modo múltiplo automaticamente, sem apagar seleções manuais já feitas
+    if (!this.modoMultiplo) {
+      this.modoMultiplo = true;
+      document.getElementById('btnToggleMulti').textContent = 'Cancelar seleção';
+      document.getElementById('barraSelecaoMultipla').style.display = 'block';
+    }
+    const n = Object.keys(this.selecionados).length;
+    document.getElementById('btnContinuarLote').textContent = 'Continuar com ' + n + ' selecionada' + (n === 1 ? '' : 's');
+
+    const resumo = document.getElementById('resultadoColagem');
+    let html = '<div style="color:var(--success); font-weight:700">✓ ' + encontrados.length + ' encontrada(s) e selecionada(s)</div>';
+    if (naoEncontrados.length) {
+      html += '<div style="color:var(--danger); font-weight:700; margin-top:6px">✗ ' + naoEncontrados.length + ' não encontrada(s) neste Bloco/Sub-bloco:</div>';
+      html += '<div style="font-family:var(--mono); color:var(--danger); margin-top:2px; word-break:break-all">' + naoEncontrados.join(', ') + '</div>';
+    }
+    resumo.innerHTML = html;
+
+    this.renderCandidatos(window.__candidatos || this.candidatosLocal);
   },
 
   filtrar(query) {
@@ -678,7 +776,8 @@ const Busca = {
     const multi = this.modoMultiplo;
     el.innerHTML = window.__candidatos.map((t, i) => {
       const selecionado = multi && this.selecionados[t.t];
-      const reportada = this.tagsReportadas.has(t.t);
+      const statusExistentes = this.tagsReportadas[t.t];
+      const reportada = !!(statusExistentes && statusExistentes.size);
       const acao = multi ? "Busca.toggleSelecao(window.__candidatos[" + i + "])" : "App.selecionarTag(window.__candidatos[" + i + "])";
       const checkbox = multi ? '<span style="float:right; font-size:16px">' + (selecionado ? '☑' : '☐') + '</span>' : '';
       let corBorda = 'var(--accent)';
@@ -687,7 +786,7 @@ const Busca = {
       else if (reportada) { corBorda = 'var(--danger)'; corFundo = 'background:var(--danger-bg);'; }
       return '<div class="candidate-card" style="border-left-color:' + corBorda + ';' + corFundo + '" onclick="' + acao + '">' +
         checkbox +
-        (reportada ? '<div style="font-size:11px; font-weight:800; color:var(--danger); letter-spacing:0.03em; margin-bottom:3px">⚠ TAG JÁ REPORTADA COMO CONCLUÍDA</div>' : '') +
+        (reportada ? '<div style="font-size:11px; font-weight:800; color:var(--danger); letter-spacing:0.03em; margin-bottom:3px">⚠ Já reportada: ' + Array.from(statusExistentes).join(', ') + '</div>' : '') +
         '<div class="candidate-tag">' + t.t + '</div>' +
         '<div class="candidate-details">' +
         '<span><b>' + (t.d || '—') + '</b></span>' +
