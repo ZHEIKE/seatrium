@@ -31,6 +31,7 @@
     <button class="pending-badge" id="pendingBadge" style="display:none" onclick="Screens.go('sync')">
       <span id="pendingCount"><b>0</b> apontamento(s) aguardando sincronizar</span>
     </button>
+    <button class="pending-badge" id="cartBadge" style="display:none; border-color:var(--accent)" onclick="Screens.go('carrinho')"></button>
   </div>
 
   <div class="crumbs" id="crumbs" style="display:none"></div>
@@ -145,7 +146,18 @@
     </div>
 
     <div class="action-bar">
-      <button class="btn btn-primary" id="btnSalvarLote" onclick="App.salvarApontamentoLote()" disabled>Salvar apontamentos</button>
+      <button class="btn btn-primary" id="btnSalvarLote" onclick="App.adicionarGrupoAoCarrinho()" disabled>🛒 Adicionar ao carrinho</button>
+    </div>
+  </div>
+
+  <!-- ===================== TELA: CARRINHO ===================== -->
+  <div class="screen" id="screen-carrinho">
+    <button class="link-btn" onclick="Screens.voltar()">← Voltar</button>
+    <div class="screen-title">Carrinho de apontamentos</div>
+    <div class="screen-desc">Grupos adicionados de diferentes Blocos/Atividades. Nada foi enviado ainda — revise e finalize quando terminar.</div>
+    <div id="listaCarrinho"></div>
+    <div class="action-bar">
+      <button class="btn btn-primary" onclick="Carrinho.finalizarTudo()">✅ Finalizar carrinho e enviar</button>
     </div>
   </div>
 

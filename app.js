@@ -103,6 +103,7 @@ const Screens = {
     window.scrollTo(0, 0);
     if (name === 'sync') Sync.renderQueue();
     if (name === 'confirmacao') App.renderResumoConfirmacao();
+    if (name === 'carrinho') Carrinho.renderCarrinho();
     if (name === 'config') App.renderConfig();
   },
   voltar() {
@@ -516,39 +517,21 @@ const App = {
     reader.readAsDataURL(file);
   },
 
-  async salvarApontamentoLote() {
+  adicionarGrupoAoCarrinho() {
     if (!this.loteStatusSelecionados.length || !this.loteTags.length) return;
     const observacao = document.getElementById('inputObservacaoLote').value.trim();
-    const agora = new Date().toISOString();
-    const registros = [];
-    for (const t of this.loteTags) {
-      const existentes = Busca.tagsReportadas[t.t];
-      for (const status of this.loteStatusSelecionados) {
-        const registro = {
-          tag: t.t,
-          atividade: this.state.atividade,
-          bloco: this.state.bloco,
-          subBloco: this.state.subBloco,
-          statusNovo: status,
-          observacao,
-          responsavelExecucao: this.state.operador,
-          nivelConfianca: 'Lote — ver observação',
-          padraoDigitado: '',
-          fotoBase64: this.loteFotoBase64,
-          dataApontamento: agora,
-          synced: 0,
-          jaReportadaAntes: !!(existentes && existentes.has(status)),
-        };
-        await dbAdd('apontamentos', registro);
-        registros.push(registro);
-        this.state.sessao.push(registro);
-      }
-    }
-    this.state.ultimoLote = registros;
-    await Sync.atualizarBadge();
-    document.getElementById('confirmacaoDesc').textContent = registros.length + ' apontamento(s) salvos neste aparelho. Serão enviados automaticamente quando houver internet.';
-    Screens.go('confirmacao');
-    if (navigator.onLine) Sync.sincronizarAgora();
+    Carrinho.adicionarGrupo({
+      atividade: this.state.atividade,
+      bloco: this.state.bloco,
+      subBloco: this.state.subBloco,
+      tags: this.loteTags.slice(),
+      status: this.loteStatusSelecionados.slice(),
+      observacao: observacao,
+      fotoBase64: this.loteFotoBase64,
+    });
+    alert(this.loteTags.length + ' TAG(s) adicionadas ao carrinho (' + this.loteStatusSelecionados.join(', ') + '). Continue navegando para adicionar mais, ou toque no carrinho no topo pra finalizar.');
+    this.renderAtividades();
+    Screens.go('atividade');
   },
 
   /* ---------- Compartilhar via WhatsApp ---------- */
@@ -897,6 +880,104 @@ const Sync = {
     await this.atualizarBadge();
     this.renderQueue();
     this.atualizarTagsReportadasRemoto();
+  }
+};
+
+/* ---------------------------------------------------------------------
+   Carrinho — grupos selecionados (TAGs + status) ficam guardados aqui,
+   sem serem salvos ainda. Só viram apontamento de verdade no "Finalizar".
+   Isso permite navegar entre Blocos/Sub-blocos/Atividades diferentes,
+   acumulando grupos, antes de enviar tudo de uma vez (como um carrinho
+   de compras).
+   --------------------------------------------------------------------- */
+const Carrinho = {
+  grupos: [], // cada item: {atividade, bloco, subBloco, tags:[...], status:[...], observacao, fotoBase64}
+
+  totalTags() {
+    return this.grupos.reduce((acc, g) => acc + g.tags.length, 0);
+  },
+
+  adicionarGrupo(grupo) {
+    this.grupos.push(grupo);
+    this.atualizarBadge();
+  },
+
+  removerGrupo(i) {
+    if (!confirm('Remover este grupo do carrinho? Nada foi enviado ainda, então isso só descarta a seleção.')) return;
+    this.grupos.splice(i, 1);
+    this.atualizarBadge();
+    this.renderCarrinho();
+  },
+
+  atualizarBadge() {
+    const badge = document.getElementById('cartBadge');
+    if (!badge) return;
+    const n = this.grupos.length;
+    if (n > 0) {
+      badge.style.display = 'inline-flex';
+      badge.innerHTML = '🛒 <b>' + this.totalTags() + '</b> TAG(s) em ' + n + ' grupo(s) — toque para finalizar';
+    } else {
+      badge.style.display = 'none';
+    }
+  },
+
+  renderCarrinho() {
+    const el = document.getElementById('listaCarrinho');
+    if (!el) return;
+    if (!this.grupos.length) {
+      el.innerHTML = '<div class="empty-state">Carrinho vazio. Selecione TAGs (modo múltiplo ou colar lista) e toque em "Adicionar ao carrinho".</div>';
+      return;
+    }
+    el.innerHTML = this.grupos.map((g, i) =>
+      '<div class="detail-card">' +
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
+      '<div>' +
+      '<div style="font-weight:800; color:var(--ink)">' + g.atividade + '</div>' +
+      '<div style="font-size:12px; color:var(--mut); margin-top:2px">' + g.bloco + ' / ' + g.subBloco + '</div>' +
+      '</div>' +
+      '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Carrinho.removerGrupo(' + i + ')">remover</button>' +
+      '</div>' +
+      '<div style="margin-top:10px; font-size:12.5px"><b>Status:</b> ' + g.status.join(', ') + '</div>' +
+      '<div style="margin-top:6px; font-family:var(--mono); font-size:12px; color:var(--mut); line-height:1.6">' + g.tags.map((t) => t.t).join(', ') + '</div>' +
+      (g.observacao ? '<div style="margin-top:6px; font-size:12px; color:var(--mut)"><b>Obs:</b> ' + g.observacao + '</div>' : '') +
+      '</div>'
+    ).join('');
+  },
+
+  async finalizarTudo() {
+    if (!this.grupos.length) { alert('Carrinho vazio — nada para finalizar.'); return; }
+    const registros = [];
+    for (const g of this.grupos) {
+      for (const t of g.tags) {
+        const existentes = Busca.tagsReportadas[t.t];
+        for (const status of g.status) {
+          const registro = {
+            tag: t.t,
+            atividade: g.atividade,
+            bloco: g.bloco,
+            subBloco: g.subBloco,
+            statusNovo: status,
+            observacao: g.observacao,
+            responsavelExecucao: App.state.operador,
+            nivelConfianca: 'Lote — ver observação',
+            padraoDigitado: '',
+            fotoBase64: g.fotoBase64,
+            dataApontamento: new Date().toISOString(),
+            synced: 0,
+            jaReportadaAntes: !!(existentes && existentes.has(status)),
+          };
+          await dbAdd('apontamentos', registro);
+          registros.push(registro);
+          App.state.sessao.push(registro);
+        }
+      }
+    }
+    this.grupos = [];
+    this.atualizarBadge();
+    await Sync.atualizarBadge();
+    document.getElementById('confirmacaoDesc').textContent = registros.length + ' apontamento(s) salvos neste aparelho (carrinho finalizado). Serão enviados automaticamente quando houver internet.';
+    Screens.go('confirmacao');
+    if (navigator.onLine) Sync.sincronizarAgora();
   }
 };
 
