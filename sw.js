@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apontamento-npo-v19';
+const CACHE_NAME = 'apontamento-npo-v20';
 const ASSETS = [
   './',
   './index.html',

@@ -114,6 +114,13 @@ body {
   margin-top: 2px;
 }
 
+.app-version {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: #b9c2cf;
+  margin-left: 4px;
+}
+
 .status-pill {
   font-family: var(--mono);
   font-size: 11px;

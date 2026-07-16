@@ -466,6 +466,7 @@ const App = {
       '<div class="photo-box" onclick="document.getElementById(\'inputFotoLote\').click()">📷 Toque para tirar ou anexar uma foto do conjunto</div>';
     this.renderStatusChoicesLote();
     document.getElementById('btnSalvarLote').disabled = true;
+    document.getElementById('btnFinalizarLoteDireto').disabled = true;
     const card = document.getElementById('resumoLoteCard');
     card.innerHTML = '<div class="detail-tag">' + lista.length + ' TAG(s) selecionada(s)</div>' +
       lista.map((t) => '<div style="font-family:var(--mono); font-size:13px; padding:4px 0; border-bottom:1px solid var(--line)">' + t.t + ' <span style="color:var(--mut); font-family:var(--sans)">— ' + (t.d || '') + '</span></div>').join('');
@@ -490,7 +491,9 @@ const App = {
       this.loteStatusSelecionados.push(status);
     }
     document.querySelector('#screen-apontamentoLote .choice-btn[data-status-lote="' + status + '"]').classList.toggle('selected');
-    document.getElementById('btnSalvarLote').disabled = this.loteStatusSelecionados.length === 0;
+    const desabilitado = this.loteStatusSelecionados.length === 0;
+    document.getElementById('btnSalvarLote').disabled = desabilitado;
+    document.getElementById('btnFinalizarLoteDireto').disabled = desabilitado;
   },
 
   handleFotoLote(event) {
@@ -532,6 +535,21 @@ const App = {
     alert(this.loteTags.length + ' TAG(s) adicionadas ao carrinho (' + this.loteStatusSelecionados.join(', ') + '). Continue navegando para adicionar mais, ou toque no carrinho no topo pra finalizar.');
     this.renderAtividades();
     Screens.go('atividade');
+  },
+
+  async adicionarGrupoEFinalizar() {
+    if (!this.loteStatusSelecionados.length || !this.loteTags.length) return;
+    const observacao = document.getElementById('inputObservacaoLote').value.trim();
+    Carrinho.adicionarGrupo({
+      atividade: this.state.atividade,
+      bloco: this.state.bloco,
+      subBloco: this.state.subBloco,
+      tags: this.loteTags.slice(),
+      status: this.loteStatusSelecionados.slice(),
+      observacao: observacao,
+      fotoBase64: this.loteFotoBase64,
+    });
+    await Carrinho.finalizarTudo();
   },
 
   /* ---------- Compartilhar via WhatsApp ---------- */
