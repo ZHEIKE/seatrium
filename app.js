@@ -16,7 +16,7 @@ let TAGS_BY_LOCAL = {};     // cache "BLOCO||SUBBLOCO" -> array ordenado por sco
    --------------------------------------------------------------------- */
 const STATUS_POR_ATIVIDADE = {
   'Montagem de Equipamentos': ['Instalado', 'Retrabalho'],
-  'Montagem de Suporte': ['Visual', 'Montado', 'Retrabalho'],
+  'Montagem de Suporte': ['Visual', 'Solda', 'Montado', 'Retrabalho'],
   'Montagem de Moldura MCT': ['Visual', 'Montado', 'Corte', 'Retrabalho'],
   'Montagem de Penetração/Colar': ['Visual', 'Montado', 'Corte', 'Retrabalho'],
   'Montagem de Bandejamento': ['Parcial', 'Total'],
@@ -28,6 +28,7 @@ const STATUS_COR = {
   'Visual': 'warning',
   'Parcial': 'warning',
   'Corte': 'warning',
+  'Solda': 'warning',
   'Retrabalho': 'danger',
 };
 
