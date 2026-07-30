@@ -36,6 +36,19 @@ function statusOpcoesPara(atividade) {
   return STATUS_POR_ATIVIDADE[atividade] || ['Instalado', 'Em andamento', 'Problema'];
 }
 
+/* Regra de negócio: em Montagem de Suporte, se "Visual" foi marcado junto com
+   outros status na mesma leva, só o "Visual" vai pra planilha — os outros
+   ficam salvos no aparelho (aparecem no WhatsApp e no resumo da sessão),
+   mas nunca são enviados ao Google Sheets. Retorna o conjunto de status
+   que devem ficar "apenas local" para essa combinação. */
+function statusApenasLocalPara(atividade, statusList) {
+  const set = new Set();
+  if (atividade === 'Montagem de Suporte' && statusList.includes('Visual') && statusList.length > 1) {
+    statusList.forEach((s) => { if (s !== 'Visual') set.add(s); });
+  }
+  return set;
+}
+
 /* ---------------------------------------------------------------------
    IndexedDB — só para a fila de apontamentos (dado que precisa persistir
    e ser reenviado). Nomes/URL de sync ficam em localStorage (mais simples).
@@ -385,6 +398,7 @@ const App = {
     const t = this.state.tagSelecionada;
     const observacao = document.getElementById('inputObservacao').value.trim();
     const nivelConfianca = document.getElementById('selectConfianca').value;
+    const statusApenasLocal = statusApenasLocalPara(this.state.atividade, this.state.statusSelecionados);
     const registros = [];
     for (const status of this.state.statusSelecionados) {
       const registro = {
@@ -400,9 +414,10 @@ const App = {
         fotoBase64: this.state.fotoBase64,
         dataApontamento: new Date().toISOString(),
         synced: 0,
+        apenasLocal: statusApenasLocal.has(status),
         jaReportadaAntes: this.state.statusDuplicadoConfirmado.has(status),
       };
-      await dbAdd('apontamentos', registro);
+      registro.id = await dbAdd('apontamentos', registro);
       registros.push(registro);
       this.state.sessao.push(registro);
     }
@@ -434,12 +449,15 @@ const App = {
     el.innerHTML = lista.slice().reverse().map((a) => Sync.itemCardHTML(a, { permitirExcluir: false })).join('');
   },
 
-  async concluirECompartilhar() {
+  concluirECompartilhar() {
     if (!this.state.sessao.length) { alert('Nenhum apontamento nesta sessão pra compartilhar.'); return; }
-    if (navigator.onLine) { await Sync.sincronizarAgora(); }
+    // Abre o WhatsApp JÁ, na mesma ação do toque — se esperarmos a sincronização
+    // terminar antes de abrir, o navegador pode bloquear a aba por não reconhecer
+    // mais isso como resultado direto do clique da pessoa.
     this._compartilharLista(this.state.sessao, 'Resumo de atividade');
     this.state.sessao = [];
     Screens.go('atividade');
+    if (navigator.onLine) Sync.sincronizarAgora(); // roda por trás, não trava o compartilhamento
   },
 
   adicionarNovoApontamento() {
@@ -555,13 +573,21 @@ const App = {
 
   /* ---------- Compartilhar via WhatsApp ---------- */
   async compartilharFilaWhatsApp() {
+    // Abre a aba em branco JÁ (ainda dentro do clique), antes de qualquer espera —
+    // depois só trocamos o endereço dela quando o texto estiver pronto. Isso evita
+    // que o navegador bloqueie a aba por causa do "await" no meio do caminho.
+    const janela = window.open('', '_blank');
     const all = await dbGetAll('apontamentos');
     const pendentes = all.filter((a) => !a.synced);
-    if (!pendentes.length) { alert('Nenhum apontamento pendente para compartilhar.'); return; }
-    this._compartilharLista(pendentes, 'Fila de apontamentos pendentes');
+    if (!pendentes.length) {
+      if (janela) janela.close();
+      alert('Nenhum apontamento pendente para compartilhar.');
+      return;
+    }
+    this._compartilharLista(pendentes, 'Fila de apontamentos pendentes', janela);
   },
 
-  _compartilharLista(lista, titulo) {
+  _compartilharLista(lista, titulo, janela) {
     const linhas = [
       '*Resumo de atividade — Elétrica e Automação - Seatrium NPO*',
       'Responsável: ' + (lista[0].responsavelExecucao || '—'),
@@ -574,7 +600,13 @@ const App = {
     });
     linhas.push('Total: ' + lista.length + ' item(ns)');
     const texto = linhas.join('\n');
-    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+    const url = 'https://wa.me/?text=' + encodeURIComponent(texto);
+    if (janela) {
+      janela.location.href = url;
+    } else {
+      const nova = window.open(url, '_blank');
+      if (!nova) alert('O navegador bloqueou a abertura do WhatsApp. Verifique se pop-ups estão permitidos para este site e tente novamente.');
+    }
   },
 
   /* ---------- Config / equipe ---------- */
@@ -807,9 +839,25 @@ const Sync = {
   itemCardHTML(a, opts) {
     opts = opts || {};
     const permitirExcluir = opts.permitirExcluir !== false;
-    return '<div class="candidate-card" style="border-left-color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--accent)')) + '">' +
+    let corBorda = 'var(--accent)';
+    let statusTexto = '⏳ pendente';
+    let statusCor = 'var(--warning)';
+    if (a.apenasLocal) {
+      corBorda = '#b9c2cf';
+      statusTexto = '— não vai pra planilha (regra Visual)';
+      statusCor = 'var(--mut)';
+    } else if (a.synced) {
+      corBorda = 'var(--success)';
+      statusTexto = '✓ sincronizado';
+      statusCor = 'var(--success)';
+    } else if (a.erroSync) {
+      corBorda = 'var(--danger)';
+      statusTexto = '✗ erro';
+      statusCor = 'var(--danger)';
+    }
+    return '<div class="candidate-card" style="border-left-color:' + corBorda + '">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
-      '<div class="candidate-tag">' + a.tag + ' <span style="font-size:11px; font-weight:700; color:' + (a.synced ? 'var(--success)' : (a.erroSync ? 'var(--danger)' : 'var(--warning)')) + '">' + (a.synced ? '✓ sincronizado' : (a.erroSync ? '✗ erro' : '⏳ pendente')) + '</span></div>' +
+      '<div class="candidate-tag">' + a.tag + ' <span style="font-size:11px; font-weight:700; color:' + statusCor + '">' + statusTexto + '</span></div>' +
       (permitirExcluir && a.id ? '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Sync.excluirItem(' + a.id + ')">excluir</button>' : '') +
       '</div>' +
       (a.jaReportadaAntes ? '<div style="font-size:11px; font-weight:800; color:var(--danger); margin-top:2px">⚠ já reportada antes</div>' : '') +
@@ -839,7 +887,7 @@ const Sync = {
 
   async atualizarBadge() {
     const all = await dbGetAll('apontamentos');
-    const pendentes = all.filter((a) => !a.synced);
+    const pendentes = all.filter((a) => !a.synced && !a.apenasLocal);
     const badge = document.getElementById('pendingBadge');
     if (pendentes.length) {
       badge.style.display = 'inline-flex';
@@ -868,7 +916,7 @@ const Sync = {
     if (!url) return;
     if (!navigator.onLine) return;
     const all = await dbGetAll('apontamentos');
-    const pendentes = all.filter((a) => !a.synced);
+    const pendentes = all.filter((a) => !a.synced && !a.apenasLocal);
     const btn = document.getElementById('btnSyncAgora');
     if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
     for (const item of pendentes) {
@@ -967,6 +1015,7 @@ const Carrinho = {
     if (!this.grupos.length) { alert('Carrinho vazio — nada para finalizar.'); return; }
     const registros = [];
     for (const g of this.grupos) {
+      const statusApenasLocal = statusApenasLocalPara(g.atividade, g.status);
       for (const t of g.tags) {
         const existentes = Busca.tagsReportadas[t.t];
         for (const status of g.status) {
@@ -983,9 +1032,10 @@ const Carrinho = {
             fotoBase64: g.fotoBase64,
             dataApontamento: new Date().toISOString(),
             synced: 0,
+            apenasLocal: statusApenasLocal.has(status),
             jaReportadaAntes: !!(existentes && existentes.has(status)),
           };
-          await dbAdd('apontamentos', registro);
+          registro.id = await dbAdd('apontamentos', registro);
           registros.push(registro);
           App.state.sessao.push(registro);
         }
