@@ -119,6 +119,7 @@ const Screens = {
     if (name === 'confirmacao') App.renderResumoConfirmacao();
     if (name === 'carrinho') Carrinho.renderCarrinho();
     if (name === 'config') App.renderConfig();
+    App.salvarProgresso();
   },
   voltar() {
     if (this.history.length < 2) { this.go('operador'); return; }
@@ -163,12 +164,77 @@ const App = {
   async init() {
     db = await openDB();
     await this.carregarTagsData();
-    this.renderOperadores();
     this.atualizarStatusConexao();
     window.addEventListener('online', () => { this.atualizarStatusConexao(); Sync.sincronizarAgora(); });
     window.addEventListener('offline', () => this.atualizarStatusConexao());
     await Sync.atualizarBadge();
     if (navigator.onLine) { Sync.sincronizarAgora(); Sync.atualizarTagsReportadasRemoto(); }
+
+    Carrinho.restaurar();
+    const restaurou = this.restaurarProgresso();
+    if (!restaurou) this.renderOperadores();
+  },
+
+  /* ---------- Lembrar onde a pessoa parou (sobrevive a fechar o app/aba) ---------- */
+  salvarProgresso() {
+    try {
+      localStorage.setItem('progressoApp', JSON.stringify({
+        operador: this.state.operador,
+        atividade: this.state.atividade,
+        bloco: this.state.bloco,
+        subBloco: this.state.subBloco,
+        tela: Screens.history[Screens.history.length - 1] || 'operador',
+      }));
+    } catch (e) { /* ignora se localStorage estiver indisponível */ }
+  },
+
+  restaurarProgresso() {
+    // Telas "no meio de um formulário" não são um bom lugar pra voltar direto
+    // (foto/observação em andamento se perdem de qualquer forma ao recarregar),
+    // então mandamos pra tela estável mais próxima.
+    const MAPA_TRANSITORIA = {
+      cadastrarOperador: 'operador',
+      confirmarTag: 'busca',
+      apontamento: 'busca',
+      apontamentoLote: 'busca',
+      confirmacao: 'atividade',
+    };
+    let salvo = null;
+    try { salvo = JSON.parse(localStorage.getItem('progressoApp') || 'null'); } catch (e) { /* ignora */ }
+    if (!salvo || !salvo.operador) return false;
+    if (!this.getOperadores().includes(salvo.operador)) return false; // nome foi removido/trocado
+
+    this.state.operador = salvo.operador;
+    const elOp = document.getElementById('topbarOperador');
+    elOp.textContent = 'Operador: ' + salvo.operador;
+    elOp.style.display = 'block';
+    this.renderOperadores();
+
+    const telaAlvo = MAPA_TRANSITORIA[salvo.tela] || salvo.tela || 'atividade';
+
+    this.renderAtividades();
+    if (telaAlvo === 'atividade' || !salvo.atividade) { Screens.go('atividade'); return true; }
+
+    this.state.atividade = salvo.atividade;
+    this.renderBlocos();
+    if (telaAlvo === 'bloco' || !salvo.bloco) { Screens.go('bloco'); return true; }
+
+    this.state.bloco = salvo.bloco;
+    this.renderSubBlocos();
+    if (telaAlvo === 'subbloco' || !salvo.subBloco) { Screens.go('subbloco'); return true; }
+
+    this.state.subBloco = salvo.subBloco;
+    Busca.prepararLocal();
+    Screens.go('busca');
+    return true;
+  },
+
+  trocarOperador() {
+    this.state.operador = null;
+    document.getElementById('topbarOperador').style.display = 'none';
+    localStorage.removeItem('progressoApp');
+    this.renderOperadores();
+    Screens.go('operador');
   },
 
   async carregarTagsData() {
@@ -964,14 +1030,28 @@ const Carrinho = {
     return this.grupos.reduce((acc, g) => acc + g.tags.length, 0);
   },
 
+  salvarLocal() {
+    try { localStorage.setItem('carrinhoGrupos', JSON.stringify(this.grupos)); } catch (e) { /* ignora (ex.: quota cheia) */ }
+  },
+
+  restaurar() {
+    try {
+      const salvo = JSON.parse(localStorage.getItem('carrinhoGrupos') || '[]');
+      if (Array.isArray(salvo)) this.grupos = salvo;
+    } catch (e) { /* ignora */ }
+    this.atualizarBadge();
+  },
+
   adicionarGrupo(grupo) {
     this.grupos.push(grupo);
+    this.salvarLocal();
     this.atualizarBadge();
   },
 
   removerGrupo(i) {
     if (!confirm('Remover este grupo do carrinho? Nada foi enviado ainda, então isso só descarta a seleção.')) return;
     this.grupos.splice(i, 1);
+    this.salvarLocal();
     this.atualizarBadge();
     this.renderCarrinho();
   },
@@ -1042,6 +1122,7 @@ const Carrinho = {
       }
     }
     this.grupos = [];
+    this.salvarLocal();
     this.atualizarBadge();
     await Sync.atualizarBadge();
     document.getElementById('confirmacaoDesc').textContent = registros.length + ' apontamento(s) salvos neste aparelho (carrinho finalizado). Serão enviados automaticamente quando houver internet.';
