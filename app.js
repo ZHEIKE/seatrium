@@ -19,7 +19,7 @@ const STATUS_POR_ATIVIDADE = {
   'Montagem de Suporte': ['Visual', 'Solda', 'Montado', 'Retrabalho'],
   'Montagem de Moldura MCT': ['Visual', 'Montado', 'Corte', 'Retrabalho'],
   'Montagem de Penetração/Colar': ['Visual', 'Montado', 'Corte', 'Retrabalho'],
-  'Montagem de Bandejamento': ['Parcial', 'Total'],
+  'Montagem de Bandejamento': ['Parcial', 'Total', 'Retrabalho'],
 };
 const STATUS_COR = {
   'Instalado': 'success',
@@ -654,8 +654,10 @@ const App = {
   },
 
   _compartilharLista(lista, titulo, janela) {
+    const dataRelatorio = new Date().toLocaleDateString('pt-BR'); // dd/mm/aaaa
     const linhas = [
       '*Resumo de atividade — Elétrica e Automação - Seatrium NPO*',
+      'Data: ' + dataRelatorio,
       'Responsável: ' + (lista[0].responsavelExecucao || '—'),
       'Atividade: ' + (lista[0].atividade || '—'),
       'Local: ' + (lista[0].bloco || '—') + ' / ' + (lista[0].subBloco || '—'),
