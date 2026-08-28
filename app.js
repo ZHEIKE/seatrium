@@ -224,7 +224,7 @@ const App = {
     if (telaAlvo === 'subbloco' || !salvo.subBloco) { Screens.go('subbloco'); return true; }
 
     this.state.subBloco = salvo.subBloco;
-    Busca.prepararLocal();
+    Busca.prepararLocal(true);
     Screens.go('busca');
     return true;
   },
@@ -719,7 +719,7 @@ const Busca = {
   modoMultiplo: false,
   selecionados: {}, // tag -> registro
 
-  prepararLocal() {
+  prepararLocal(manter) {
     const key = App.state.atividade + '||' + App.state.bloco + '||' + App.state.subBloco;
     if (!TAGS_BY_LOCAL[key]) {
       const itens = TAGS.filter((t) => t.a === App.state.atividade && t.b === App.state.bloco && t.s === App.state.subBloco);
@@ -732,12 +732,17 @@ const Busca = {
       TAGS_BY_LOCAL[key] = itens;
     }
     this.candidatosLocal = TAGS_BY_LOCAL[key];
-    this.modoMultiplo = false;
-    this.selecionados = {};
     document.getElementById('inputBusca').value = '';
-    document.getElementById('barraSelecaoMultipla').style.display = 'none';
-    document.getElementById('btnToggleMulti').textContent = 'Selecionar várias';
     this.fecharColar();
+    if (manter) {
+      this.restaurarSelecao();
+    } else {
+      this.modoMultiplo = false;
+      this.selecionados = {};
+      document.getElementById('barraSelecaoMultipla').style.display = 'none';
+      document.getElementById('btnToggleMulti').textContent = 'Selecionar várias';
+      localStorage.removeItem('buscaSelecao');
+    }
     App.state.padraoDigitado = '';
     this.atualizarTagsReportadas().then(() => this.renderCandidatos(this.candidatosLocal));
   },
@@ -767,11 +772,41 @@ const Busca = {
     this.tagsReportadas = mapa;
   },
 
+  /* ---------- Persistência da seleção múltipla — sobrevive a fechar/recarregar o app ---------- */
+  salvarSelecao() {
+    try {
+      localStorage.setItem('buscaSelecao', JSON.stringify({
+        modoMultiplo: this.modoMultiplo,
+        tags: Object.keys(this.selecionados),
+      }));
+    } catch (e) { /* ignora */ }
+  },
+
+  restaurarSelecao() {
+    try {
+      const salvo = JSON.parse(localStorage.getItem('buscaSelecao') || 'null');
+      if (!salvo || !salvo.tags || !salvo.tags.length) return;
+      const encontrados = {};
+      salvo.tags.forEach((tagStr) => {
+        const match = this.candidatosLocal.find((c) => c.t === tagStr);
+        if (match) encontrados[tagStr] = match;
+      });
+      if (!Object.keys(encontrados).length) return;
+      this.selecionados = encontrados;
+      this.modoMultiplo = true;
+      document.getElementById('btnToggleMulti').textContent = 'Cancelar seleção';
+      document.getElementById('barraSelecaoMultipla').style.display = 'block';
+      const n = Object.keys(this.selecionados).length;
+      document.getElementById('btnContinuarLote').textContent = 'Continuar com ' + n + ' selecionada' + (n === 1 ? '' : 's');
+    } catch (e) { /* ignora */ }
+  },
+
   alternarModoMultiplo() {
     this.modoMultiplo = !this.modoMultiplo;
     this.selecionados = {};
     document.getElementById('btnToggleMulti').textContent = this.modoMultiplo ? 'Cancelar seleção' : 'Selecionar várias';
     document.getElementById('barraSelecaoMultipla').style.display = this.modoMultiplo ? 'block' : 'none';
+    this.salvarSelecao();
     this.renderCandidatos(window.__candidatos || this.candidatosLocal);
   },
 
@@ -780,12 +815,14 @@ const Busca = {
     else this.selecionados[tag.t] = tag;
     const n = Object.keys(this.selecionados).length;
     document.getElementById('btnContinuarLote').textContent = 'Continuar com ' + n + ' selecionada' + (n === 1 ? '' : 's');
+    this.salvarSelecao();
     this.renderCandidatos(window.__candidatos || this.candidatosLocal);
   },
 
   irParaLote() {
     const lista = Object.values(this.selecionados);
     if (!lista.length) { alert('Selecione ao menos uma TAG.'); return; }
+    localStorage.removeItem('buscaSelecao'); // consumida — vai virar grupo/carrinho agora
     App.iniciarLote(lista);
   },
 
@@ -848,6 +885,7 @@ const Busca = {
     }
     resumo.innerHTML = html;
 
+    this.salvarSelecao();
     this.renderCandidatos(window.__candidatos || this.candidatosLocal);
   },
 
