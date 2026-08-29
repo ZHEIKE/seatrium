@@ -460,46 +460,35 @@ const App = {
     document.getElementById('btnSalvarApontamento').disabled = !ok;
   },
 
-  async salvarApontamento() {
+  salvarApontamento() {
     const t = this.state.tagSelecionada;
+    if (!this.state.statusSelecionados.length) return;
     const observacao = document.getElementById('inputObservacao').value.trim();
     const nivelConfianca = document.getElementById('selectConfianca').value;
-    const statusApenasLocal = statusApenasLocalPara(this.state.atividade, this.state.statusSelecionados);
-    const registros = [];
-    for (const status of this.state.statusSelecionados) {
-      const registro = {
-        tag: t.t,
-        atividade: this.state.atividade,
-        bloco: this.state.bloco,
-        subBloco: this.state.subBloco,
-        statusNovo: status,
-        observacao: observacao,
-        responsavelExecucao: this.state.operador,
-        nivelConfianca: nivelConfianca,
-        padraoDigitado: this.state.padraoDigitado || '',
-        fotoBase64: this.state.fotoBase64,
-        dataApontamento: new Date().toISOString(),
-        synced: 0,
-        apenasLocal: statusApenasLocal.has(status),
-        jaReportadaAntes: this.state.statusDuplicadoConfirmado.has(status),
-      };
-      registro.id = await dbAdd('apontamentos', registro);
-      registros.push(registro);
-      this.state.sessao.push(registro);
-    }
-    this.state.ultimoLote = registros;
+    Carrinho.adicionarGrupo({
+      atividade: this.state.atividade,
+      bloco: this.state.bloco,
+      subBloco: this.state.subBloco,
+      tags: [t],
+      status: this.state.statusSelecionados.slice(),
+      statusPorTag: {},
+      observacao: observacao,
+      fotoBase64: this.state.fotoBase64,
+      nivelConfianca: nivelConfianca,
+      padraoDigitado: this.state.padraoDigitado || '',
+      duplicadoConfirmado: Array.from(this.state.statusDuplicadoConfirmado || []),
+    });
     // reset campos do formulário (mantém local/operador)
     this.state.tagSelecionada = null;
     this.state.statusSelecionados = [];
+    this.state.statusDuplicadoConfirmado = new Set();
     this.state.fotoBase64 = null;
     document.getElementById('inputObservacao').value = '';
     document.getElementById('photoArea').innerHTML =
       '<div class="photo-box" onclick="document.getElementById(\'inputFoto\').click()">📷 Toque para tirar ou anexar foto</div>';
-    document.querySelectorAll('#screen-apontamento .choice-btn').forEach((b) => b.classList.remove('selected'));
-    await Sync.atualizarBadge();
-    document.getElementById('confirmacaoDesc').textContent = registros.length + ' apontamento(s) salvo(s) neste aparelho (' + registros.map((r) => r.statusNovo).join(', ') + '). Será enviado automaticamente quando houver internet.';
-    Screens.go('confirmacao');
-    if (navigator.onLine) Sync.sincronizarAgora();
+    document.querySelectorAll('#statusChoices .choice-btn').forEach((b) => b.classList.remove('selected'));
+    Busca.prepararLocal();
+    Screens.go('busca');
   },
 
   novoApontamentoMesmoLocal() {
@@ -540,11 +529,15 @@ const App = {
   /* ---------- Apontamento em lote (várias TAGs de uma vez) ---------- */
   loteTags: [],
   loteStatusSelecionados: [],
+  loteStatusPorTag: {},
+  loteExpandidos: {},
   loteFotoBase64: null,
 
   iniciarLote(lista) {
     this.loteTags = lista;
     this.loteStatusSelecionados = [];
+    this.loteStatusPorTag = {};
+    this.loteExpandidos = {};
     this.loteFotoBase64 = null;
     document.getElementById('inputObservacaoLote').value = '';
     document.getElementById('photoAreaLote').innerHTML =
@@ -552,10 +545,52 @@ const App = {
     this.renderStatusChoicesLote();
     document.getElementById('btnSalvarLote').disabled = true;
     document.getElementById('btnFinalizarLoteDireto').disabled = true;
-    const card = document.getElementById('resumoLoteCard');
-    card.innerHTML = '<div class="detail-tag">' + lista.length + ' TAG(s) selecionada(s)</div>' +
-      lista.map((t) => '<div style="font-family:var(--mono); font-size:13px; padding:4px 0; border-bottom:1px solid var(--line)">' + t.t + ' <span style="color:var(--mut); font-family:var(--sans)">— ' + (t.d || '') + '</span></div>').join('');
+    this.renderResumoLote();
     Screens.go('apontamentoLote');
+  },
+
+  renderResumoLote() {
+    const card = document.getElementById('resumoLoteCard');
+    const opcoes = statusOpcoesPara(this.state.atividade);
+    card.innerHTML = '<div class="detail-tag">' + this.loteTags.length + ' TAG(s) selecionada(s)</div>' +
+      this.loteTags.map((t, ti) => {
+        const statusDoTag = this.loteStatusPorTag[t.t] || this.loteStatusSelecionados;
+        const alterado = !!this.loteStatusPorTag[t.t];
+        const aberto = !!this.loteExpandidos[ti];
+        return '<div style="padding:7px 0; border-bottom:1px solid var(--line)">' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px">' +
+          '<span style="font-family:var(--mono); font-size:13px">' + t.t + '</span>' +
+          '<div style="display:flex; align-items:center; gap:8px; flex-shrink:0">' +
+          '<span style="color:var(--mut); font-family:var(--sans); font-size:12px">' + (t.d || '') + (alterado ? ' <span style="color:var(--accent)">●</span>' : '') + '</span>' +
+          '<button class="link-btn" style="font-size:11px" onclick="App.toggleExpandLoteTag(' + ti + ')">status ' + (aberto ? '▴' : '▾') + '</button>' +
+          '</div></div>' +
+          (aberto ?
+            '<div style="margin-top:6px; padding:8px 10px; background:var(--card2); border-radius:8px; display:flex; flex-wrap:wrap; gap:4px 12px">' +
+            opcoes.map((s) =>
+              '<label style="display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--ink)">' +
+              '<input type="checkbox" ' + (statusDoTag.includes(s) ? 'checked' : '') + ' onchange="App.alterarStatusLoteTag(' + ti + ',\'' + s + '\',this.checked)"> ' + s +
+              '</label>'
+            ).join('') +
+            '</div>'
+            : (alterado ? '<div style="font-size:11px; color:var(--mut); margin-top:2px">' + statusDoTag.join(', ') + '</div>' : '')) +
+          '</div>';
+      }).join('');
+  },
+
+  toggleExpandLoteTag(ti) {
+    this.loteExpandidos[ti] = !this.loteExpandidos[ti];
+    this.renderResumoLote();
+  },
+
+  alterarStatusLoteTag(ti, status, marcado) {
+    const t = this.loteTags[ti];
+    if (!this.loteStatusPorTag[t.t]) this.loteStatusPorTag[t.t] = this.loteStatusSelecionados.slice();
+    if (marcado) {
+      if (!this.loteStatusPorTag[t.t].includes(status)) this.loteStatusPorTag[t.t].push(status);
+    } else {
+      this.loteStatusPorTag[t.t] = this.loteStatusPorTag[t.t].filter((s) => s !== status);
+    }
+    this.renderResumoLote();
   },
 
   renderStatusChoicesLote() {
@@ -579,6 +614,7 @@ const App = {
     const desabilitado = this.loteStatusSelecionados.length === 0;
     document.getElementById('btnSalvarLote').disabled = desabilitado;
     document.getElementById('btnFinalizarLoteDireto').disabled = desabilitado;
+    this.renderResumoLote(); // TAGs sem ajuste individual seguem o novo padrão — atualiza a exibição
   },
 
   handleFotoLote(event) {
@@ -614,10 +650,10 @@ const App = {
       subBloco: this.state.subBloco,
       tags: this.loteTags.slice(),
       status: this.loteStatusSelecionados.slice(),
+      statusPorTag: Object.assign({}, this.loteStatusPorTag),
       observacao: observacao,
       fotoBase64: this.loteFotoBase64,
     });
-    alert(this.loteTags.length + ' TAG(s) adicionadas ao carrinho (' + this.loteStatusSelecionados.join(', ') + '). Continue navegando para adicionar mais, ou toque no carrinho no topo pra finalizar.');
     this.renderAtividades();
     Screens.go('atividade');
   },
@@ -631,6 +667,7 @@ const App = {
       subBloco: this.state.subBloco,
       tags: this.loteTags.slice(),
       status: this.loteStatusSelecionados.slice(),
+      statusPorTag: Object.assign({}, this.loteStatusPorTag),
       observacao: observacao,
       fotoBase64: this.loteFotoBase64,
     });
@@ -1064,7 +1101,8 @@ const Sync = {
    de compras).
    --------------------------------------------------------------------- */
 const Carrinho = {
-  grupos: [], // cada item: {atividade, bloco, subBloco, tags:[...], status:[...], observacao, fotoBase64}
+  grupos: [], // cada item: {atividade, bloco, subBloco, tags:[...], status:[...], statusPorTag:{tag:[...]}, observacao, fotoBase64, nivelConfianca?, padraoDigitado?, duplicadoConfirmado?}
+  expandidos: {}, // controla quais mini-painéis de status individual estão abertos (só em memória)
 
   totalTags() {
     return this.grupos.reduce((acc, g) => acc + g.tags.length, 0);
@@ -1077,22 +1115,58 @@ const Carrinho = {
   restaurar() {
     try {
       const salvo = JSON.parse(localStorage.getItem('carrinhoGrupos') || '[]');
-      if (Array.isArray(salvo)) this.grupos = salvo;
+      if (Array.isArray(salvo)) {
+        this.grupos = salvo;
+        this.grupos.forEach((g) => { if (!g.statusPorTag) g.statusPorTag = {}; });
+      }
     } catch (e) { /* ignora */ }
     this.atualizarBadge();
   },
 
   adicionarGrupo(grupo) {
+    if (!grupo.statusPorTag) grupo.statusPorTag = {};
     this.grupos.push(grupo);
     this.salvarLocal();
     this.atualizarBadge();
   },
 
   removerGrupo(i) {
-    if (!confirm('Remover este grupo do carrinho? Nada foi enviado ainda, então isso só descarta a seleção.')) return;
+    if (!confirm('Remover este grupo inteiro do carrinho (todas as TAGs dele)? Nada foi enviado ainda.')) return;
     this.grupos.splice(i, 1);
     this.salvarLocal();
     this.atualizarBadge();
+    this.renderCarrinho();
+  },
+
+  removerTagDoGrupo(gi, ti) {
+    const g = this.grupos[gi];
+    if (!g) return;
+    const t = g.tags[ti];
+    if (!confirm('Remover a TAG ' + t.t + ' deste grupo? Nada foi enviado ainda.')) return;
+    g.tags.splice(ti, 1);
+    delete g.statusPorTag[t.t];
+    if (!g.tags.length) this.grupos.splice(gi, 1); // grupo vazio some sozinho
+    this.salvarLocal();
+    this.atualizarBadge();
+    this.renderCarrinho();
+  },
+
+  toggleExpandTag(gi, ti) {
+    const key = gi + '-' + ti;
+    this.expandidos[key] = !this.expandidos[key];
+    this.renderCarrinho();
+  },
+
+  alterarStatusTag(gi, ti, status, marcado) {
+    const g = this.grupos[gi];
+    const t = g.tags[ti];
+    if (!g.statusPorTag[t.t]) g.statusPorTag[t.t] = g.status.slice(); // parte do padrão do grupo na 1ª edição
+    if (marcado) {
+      if (!g.statusPorTag[t.t].includes(status)) g.statusPorTag[t.t].push(status);
+    } else {
+      g.statusPorTag[t.t] = g.statusPorTag[t.t].filter((s) => s !== status);
+    }
+    this.salvarLocal();
     this.renderCarrinho();
   },
 
@@ -1112,33 +1186,60 @@ const Carrinho = {
     const el = document.getElementById('listaCarrinho');
     if (!el) return;
     if (!this.grupos.length) {
-      el.innerHTML = '<div class="empty-state">Carrinho vazio. Selecione TAGs (modo múltiplo ou colar lista) e toque em "Adicionar ao carrinho".</div>';
+      el.innerHTML = '<div class="empty-state">Carrinho vazio. Toque numa TAG (ou selecione várias) e adicione ao carrinho.</div>';
       return;
     }
-    el.innerHTML = this.grupos.map((g, i) =>
-      '<div class="detail-card">' +
-      '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
-      '<div>' +
-      '<div style="font-weight:800; color:var(--ink)">' + g.atividade + '</div>' +
-      '<div style="font-size:12px; color:var(--mut); margin-top:2px">' + g.bloco + ' / ' + g.subBloco + '</div>' +
-      '</div>' +
-      '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Carrinho.removerGrupo(' + i + ')">remover</button>' +
-      '</div>' +
-      '<div style="margin-top:10px; font-size:12.5px"><b>Status:</b> ' + g.status.join(', ') + '</div>' +
-      '<div style="margin-top:6px; font-family:var(--mono); font-size:12px; color:var(--mut); line-height:1.6">' + g.tags.map((t) => t.t).join(', ') + '</div>' +
-      (g.observacao ? '<div style="margin-top:6px; font-size:12px; color:var(--mut)"><b>Obs:</b> ' + g.observacao + '</div>' : '') +
-      '</div>'
-    ).join('');
+    el.innerHTML = this.grupos.map((g, gi) => {
+      const linhasTags = g.tags.map((t, ti) => {
+        const statusDoTag = g.statusPorTag[t.t] || g.status;
+        const alterado = !!g.statusPorTag[t.t];
+        const key = gi + '-' + ti;
+        const aberto = !!this.expandidos[key];
+        const opcoes = statusOpcoesPara(g.atividade);
+        return '<div style="padding:7px 0; border-bottom:1px solid var(--line)">' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; gap:8px">' +
+          '<span style="font-family:var(--mono); font-size:12px">' + t.t + (alterado ? ' <span style="color:var(--accent)">●</span>' : '') + '</span>' +
+          '<div style="display:flex; gap:10px; flex-shrink:0">' +
+          '<button class="link-btn" style="font-size:11px" onclick="Carrinho.toggleExpandTag(' + gi + ',' + ti + ')">status ' + (aberto ? '▴' : '▾') + '</button>' +
+          '<button class="link-btn" style="font-size:11px; color:var(--danger)" onclick="Carrinho.removerTagDoGrupo(' + gi + ',' + ti + ')">excluir</button>' +
+          '</div></div>' +
+          (aberto ?
+            '<div style="margin-top:6px; padding:8px 10px; background:var(--card2); border-radius:8px; display:flex; flex-wrap:wrap; gap:4px 12px">' +
+            opcoes.map((s) =>
+              '<label style="display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--ink)">' +
+              '<input type="checkbox" ' + (statusDoTag.includes(s) ? 'checked' : '') + ' onchange="Carrinho.alterarStatusTag(' + gi + ',' + ti + ',\'' + s + '\',this.checked)"> ' + s +
+              '</label>'
+            ).join('') +
+            '</div>'
+            : '<div style="font-size:11px; color:var(--mut); margin-top:2px">' + statusDoTag.join(', ') + '</div>')
+          + '</div>';
+      }).join('');
+
+      return '<div class="detail-card">' +
+        '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px">' +
+        '<div>' +
+        '<div style="font-weight:800; color:var(--ink)">' + g.atividade + '</div>' +
+        '<div style="font-size:12px; color:var(--mut); margin-top:2px">' + g.bloco + ' / ' + g.subBloco + '</div>' +
+        '</div>' +
+        '<button class="link-btn" style="color:var(--danger); white-space:nowrap" onclick="Carrinho.removerGrupo(' + gi + ')">remover grupo</button>' +
+        '</div>' +
+        '<div style="margin-top:8px; font-size:12px; color:var(--mut)"><b style="color:var(--ink)">Status padrão do grupo:</b> ' + g.status.join(', ') + ' <span style="color:#b9c2cf">(toque em "status" ao lado de cada TAG pra ajustar individualmente)</span></div>' +
+        '<div style="margin-top:8px">' + linhasTags + '</div>' +
+        (g.observacao ? '<div style="margin-top:8px; font-size:12px; color:var(--mut)"><b>Obs:</b> ' + g.observacao + '</div>' : '') +
+        '</div>';
+    }).join('');
   },
 
   async finalizarTudo() {
     if (!this.grupos.length) { alert('Carrinho vazio — nada para finalizar.'); return; }
     const registros = [];
     for (const g of this.grupos) {
-      const statusApenasLocal = statusApenasLocalPara(g.atividade, g.status);
+      const duplicadoConfirmado = g.duplicadoConfirmado || [];
       for (const t of g.tags) {
+        const statusDoTag = g.statusPorTag[t.t] || g.status;
+        const statusApenasLocal = statusApenasLocalPara(g.atividade, statusDoTag);
         const existentes = Busca.tagsReportadas[t.t];
-        for (const status of g.status) {
+        for (const status of statusDoTag) {
           const registro = {
             tag: t.t,
             atividade: g.atividade,
@@ -1147,13 +1248,13 @@ const Carrinho = {
             statusNovo: status,
             observacao: g.observacao,
             responsavelExecucao: App.state.operador,
-            nivelConfianca: 'Lote — ver observação',
-            padraoDigitado: '',
+            nivelConfianca: g.nivelConfianca || 'Lote — ver observação',
+            padraoDigitado: g.padraoDigitado || '',
             fotoBase64: g.fotoBase64,
             dataApontamento: new Date().toISOString(),
             synced: 0,
             apenasLocal: statusApenasLocal.has(status),
-            jaReportadaAntes: !!(existentes && existentes.has(status)),
+            jaReportadaAntes: duplicadoConfirmado.includes(status) || !!(existentes && existentes.has(status)),
           };
           registro.id = await dbAdd('apontamentos', registro);
           registros.push(registro);
@@ -1162,6 +1263,7 @@ const Carrinho = {
       }
     }
     this.grupos = [];
+    this.expandidos = {};
     this.salvarLocal();
     this.atualizarBadge();
     await Sync.atualizarBadge();
